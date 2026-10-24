@@ -4,6 +4,8 @@ Oct 24, 2026 · @sub.maureen
 
 > 修订（2026-10-24）：对照 xbuddy（DSH）、bkms-workbench、xbuddy-bid-writer、bkms-plugin-center 源码和桌面 Profile 调整。主要变化：第 0、1 层改用 DSH 技能机制，去掉 `app_guide` 和自拼 `systemPrompt.section`；风险拦截改用 `tools/pre-execute` 的 `ask`；身份和角色复用 `@bkms/base`；版本兼容交给 DSH 的 peer 检查；回滚改为发修复版；补充工具可见范围、数据位置、依赖打包和首批应用的实际改动量。与现有代码的冲突和待验证项见文末两节。
 
+> 2026-10-24 补充：应用分发方向调整为“随客户端预装 + plugin-center 自动升级，不做按需下载”，预装机制的分析与修改建议见《[XBuddy 预装插件机制分析](XBuddy%20预装插件机制分析.md)》，本文相关章节待方案确认后更新。
+
 ## 结论与总体架构
 
 新建一个独立插件 `@bkms/app-center`（应用中心），负责面向用户的应用目录、应用登记和 AI 对话集成；安装和升级全部复用现有的 `@bkms/plugin-center`，不重做。
