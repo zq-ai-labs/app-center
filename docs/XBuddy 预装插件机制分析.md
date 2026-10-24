@@ -120,7 +120,7 @@ dsh-email 在对话中注册 11 个邮件工具，包括 `email_send`、`email_r
 3. **预装失败不阻塞启动**：已有插件照常启动，失败写日志并在下次启动重试。
 4. **配套要求**：
    - 所有预装包使用 `bundleDependencies`（参考 bkms-workbench `scripts/pack-plugin.mjs`），保证离线安装；
-   - bid-writer 的 `engines.dsh` 改为范围（如 `>=0.2.0-rc.2 <0.3.0`）或删除；
+   - bid-writer 的 `engines.dsh` 改为范围（如 `>=0.2.0-rc.2 <0.3.0-0`）或删除；
    - 预装清单去掉 dsh-email，加入 plugin-center、应用中心、工作台、标书；
    - 每个应用在中心配置分发规则 `installMode: required`、`autoUpgrade: true`，后续升级由 plugin-center 完成；
    - 发布前核对安装包中的预装清单与仓库 `brand.yaml` 一致。

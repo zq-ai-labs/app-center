@@ -404,7 +404,7 @@ interface BkmsPluginCenter {
 - [ ] 长任务在应用后台执行（隔离 Agent 或任务队列）；技能只注册在应用自己的后台 Agent 里，不进主对话。
 - [ ] 任务状态变化时调 `tasks.report`；停用时保存进行中的任务。
 - [ ] 新版能读旧数据，迁移只加不删，上一版也能读新数据；动作改名时保留 `aliases`。
-- [ ] `peerDependencies` 中的 `@deepseek-ai/dsh*` 写版本范围（如 `>=0.2.0-rc.2 <0.3.0`），不写精确版本；`engines.dsh` 要么不写，要么也写范围（DSH 0.2.1 起声明了它就只看它）。`@bkms/base` peer 范围覆盖当前版本。
+- [ ] `peerDependencies` 中的 `@deepseek-ai/dsh*` 写版本范围（如 `>=0.2.0-rc.2 <0.3.0-0`；上限写 `-0`，因为 DSH 按 `includePrerelease` 比较，`<0.3.0` 会放行 0.3.0 的预发布版），不写精确版本；`engines.dsh` 要么不写，要么也写范围（DSH 0.2.1 起声明了它就只看它）。`@bkms/base` peer 范围覆盖当前版本。
 - [ ] 依赖用 `bundleDependencies` 打进发布包（参考 bkms-workbench `scripts/pack-plugin.mjs`），没有安装脚本。
 - [ ] 发布包尽量在几 MB 以内，大资源（模板库、资质库）首次用到时再下载；含原生模块的应用按平台分包，各平台种子分别打包。
 - [ ] 数据放在 `ctx.profileContext` 下，按 tenantCode/userId 隔离。
