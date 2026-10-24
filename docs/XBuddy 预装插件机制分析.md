@@ -89,7 +89,20 @@ dsh-email 在对话中注册 11 个邮件工具，包括 `email_send`、`email_r
 | 混用注册表后，pnpm 按默认注册表校验锁文件中的 tarball URL，可能报 `ERR_PNPM_TARBALL_URL_MISMATCH` | plugin-manager 已知限制 | 预装、plugin-center、用户安装共用同一 Profile 锁文件时需注意 |
 | master（rc.3 之后）`e0e37bfd3d`：组合包清单移到新包 `@deepseek-ai/dsh-official-bundles`，修改了 `project-manager.ts` 的导入 | `apps/desktop/src/project-manager.ts` | XBuddy 合并上游时与预装改动会有小冲突 |
 
-## 修改建议（待实施）
+## 采用的方案（2026-10-24）
+
+经讨论，没有采用下文“按版本判断”的方案 B，改为：**所有插件的安装和升级只由 plugin-center 执行**。
+
+| 项 | 做法 |
+| --- | --- |
+| 引导 | XBuddy 预装清单只保留 plugin-center，它随客户端大版本升级，不在自己的分发规则里 |
+| 首次安装 | 客户端安装包附带 plugin-center 离线种子（插件 tgz + 初始 `distribution-v2.json`），plugin-center 首次启动从种子安装，断网也可 |
+| 升级与新增 | plugin-center 按中心分发规则自动升级和新增（`installMode: required`、`autoUpgrade: true`） |
+| XBuddy 改动 | `preinstalled-plugins.ts` 只去掉“卸载已移出清单的预装包”这一步，避免过渡版本启动时先卸载现有插件；其余不变 |
+
+这样预装同步只管 plugin-center 一个包，不再与 plugin-center 的升级冲突，XBuddy 的改动也比方案 B 小。下文“修改建议”保留作对比。
+
+## 修改建议（方案 B，未采用）
 
 修改集中在 `apps/desktop/src/preinstalled-plugins.ts`，约 30–50 行，另补 `tests/preinstalled-plugins.spec.ts`。
 
@@ -121,4 +134,4 @@ dsh-email 在对话中注册 11 个邮件工具，包括 `email_send`、`email_r
 - 冲突 C6（标书原生依赖）基本缓解：安装包本身按平台构建；只有 plugin-center 单独升级标书时需要按平台分包。
 - 回滚仍为“暂停分发 + 发布更高版本的修复版”，plugin-center 不降级。
 
-以上影响尚未写回需求文档和技术方案，待方案确认后统一修改。
+以上影响已按“采用的方案”写回需求文档和技术方案（2026-10-24）。
