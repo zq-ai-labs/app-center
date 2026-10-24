@@ -15,7 +15,14 @@ function GridIcon({ size = 20 }: { size?: number }) {
   </svg>
 }
 
+/**
+ * Presence of the app center in the browser. Apps inject it to know they are hosted here: while it exists they drop
+ * their own left-menu entry (the app center lists them and opens their page); when it goes away the entry returns.
+ */
+export interface AppCenterPresence { readonly version: 1; readonly panel: string }
+
 export function apply(ctx: any): void {
+  if (typeof ctx.provide === 'function') ctx.provide('bkmsAppCenter', { version: 1, panel: PANEL_ID } satisfies AppCenterPresence)
   ctx.effect(() => {
     const style = document.createElement('style')
     style.dataset.plugin = 'bkms-app-center'

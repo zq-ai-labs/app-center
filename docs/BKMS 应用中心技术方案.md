@@ -200,6 +200,7 @@ interface ActionResult {
 - 左侧入口 **应用中心**：沿用 `@bkms/ui-skills` 工具集市的布局、尺寸和 DSH 设计变量（标题与搜索固定、分类标签换行、卡片区独立滚动、三列卡片），标题“企业应用中心 · 管理中心”。
 - 卡片：圆形字标图标、名称、分类标签、一句话描述、“N 万人聊过”；整张卡片是唯一的操作入口，没有安装、打开、详情按钮。
 - 点击即使用：已安装 → 打开应用页面（`layout.selectPanel(page)`），没有页面的应用新开对话并提示 `/app-<id>`；还没装好的应用，卡片显示 plugin-center 的同步状态：等待安装、安装中（进度）、已安装需刷新 / 重启、安装失败；点击安装中的应用，装好登记后自动打开；点击失败的应用，请 plugin-center 重试。页面本身不安装。
+- 应用入口：应用中心客户端提供存在服务 `bkmsAppCenter`（`{ version: 1, panel }`）。应用客户端用 `ctx.inject(['bkmsAppCenter'], …)` 监听：存在时撤下自己的 `sidebar.panellist` 入口，只保留 `main` 页面供应用中心打开；应用中心卸载时自动恢复入口。没装应用中心时，应用照常显示自己的入口。
 - 状态来源：中心目录里有、但还没登记的应用，按 `bkmsPluginCenter.status()` 的 `progress`、`notices`、`plugins`（失败次数和原因）推出状态。
 - 不兼容当前客户端的插件不会被下发（plugin-center 不推送，DSH 也拒绝加载）。
 - 后端接口（`/api/bkms-app-center/*`，POST 只接 JSON，沿用 plugin-center 的防跨站做法）：
@@ -411,7 +412,7 @@ interface BkmsPluginCenter {
 - [ ] 只通过 `ctx.get(name)` 或 `ctx.inject([...])` 读取宿主服务，不直接读 `ctx.<服务名>`：Cordis 4 对未声明的服务属性会抛错，插件启动失败（实现时在真实 DSH 中发现）。
 - [ ] 中心服务为应用配置一条分发规则（`installMode: required`、`autoUpgrade: true`、适用角色），发布包同时进入离线种子。
 - [ ] 发布前用测试集跑一遍，没有和已有动作混淆，也没有和 `enterprise_invoke_function` 混淆。
-- [ ] 不装应用中心时，应用页面仍可独立使用。
+- [ ] 不装应用中心时，应用页面仍可独立使用，并显示自己的左侧菜单入口；装了应用中心时，通过 `ctx.inject(['bkmsAppCenter'], …)` 撤下入口、保留页面。
 
 ### 首批应用
 
