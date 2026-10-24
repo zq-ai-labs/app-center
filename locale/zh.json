@@ -1,0 +1,10 @@
+{
+  "meta": {
+    "title": "应用中心",
+    "description": "合同、标书、业务邮件等应用的目录与安装入口，并让 AI 对话按需调用这些应用。"
+  },
+  "confirmDrafts": "草稿类动作也先确认",
+  "resident": "常驻工具（应用.动作）",
+  "dataDir": "数据目录",
+  "sampleApps": "试用模式（示例应用）"
+}

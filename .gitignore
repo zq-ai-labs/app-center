@@ -1,5 +1,6 @@
-node_modules/
-lib/
-dist/
-demo/public/
+.pack-check/
 demo/data/
+demo/public/
+dist/
+lib/
+node_modules/

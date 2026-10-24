@@ -1,22 +1,25 @@
 // Load @bkms/app-center into a real Cordis context with the real DSH tool and skill registries taken from an
 // installed XBuddy (Electron as Node). Checks registration, the pre-execute gate and output validation.
-//   ELECTRON_RUN_AS_NODE=1 XBuddy.exe scripts/real-dsh-check.mjs <path-to>/app.asar/dsh/node_modules
+//   ELECTRON_RUN_AS_NODE=1 XBuddy.exe scripts/real-dsh-check.mjs <path-to>/app.asar/dsh/node_modules [extracted package dir]
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+const report = (label, value) => console.log(`${label}:`, typeof value === 'string' ? value : JSON.stringify(value))
 const base = process.argv[2]
 const load = name => import(pathToFileURL(join(base, name, 'lib', 'index.js')).href)
 const { Context } = await load('@deepseek-ai/cordis')
 const tools = await load('@deepseek-ai/dsh-tools')
 const skills = await load('@deepseek-ai/dsh-skill')
 const systemPrompt = await load('@deepseek-ai/dsh-system-prompt')
-const appCenter = await import(new URL('../lib/index.js', import.meta.url).href)
+const packageDir = process.argv[3]
+const appCenter = await import(packageDir ? pathToFileURL(join(packageDir, 'lib', 'index.js')).href : new URL('../lib/index.js', import.meta.url).href)
+report('loaded from', packageDir ?? 'checkout')
+report('Config schema', typeof appCenter.Config === 'function' ? JSON.stringify(appCenter.Config({})) : 'missing')
 const apps = await import(new URL('../demo/apps.mjs', import.meta.url).href)
 
 const ctx = new Context()
-const report = (label, value) => console.log(`${label}:`, typeof value === 'string' ? value : JSON.stringify(value))
 ctx.plugin(systemPrompt.default ?? systemPrompt)
 const toolsFiber = ctx.plugin(tools.default ?? tools)
 const skillsFiber = ctx.plugin(skills.default ?? skills)

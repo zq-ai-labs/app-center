@@ -1,0 +1,10 @@
+{
+  "meta": {
+    "title": "App Center",
+    "description": "Catalog and install entry for business apps such as contracts, bids and business mail, callable on demand from AI conversations."
+  },
+  "confirmDrafts": "Confirm draft actions too",
+  "resident": "Resident tools (app.action)",
+  "dataDir": "Data folder",
+  "sampleApps": "Trial mode (sample apps)"
+}

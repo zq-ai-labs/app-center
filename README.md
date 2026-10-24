@@ -41,7 +41,17 @@ ELECTRON_RUN_AS_NODE=1 "<XBuddy 安装目录>/XBuddy.exe" scripts/real-dsh-check
 
 用已安装 XBuddy 里的 Cordis、`dsh-tools`、`dsh-skill`、`dsh-system-prompt` 挂载应用中心，检查服务注入、工具注册与输出校验、技能注册和加载、风险拦截。
 
-## 在本机 XBuddy 中试用
+## 打包与安装（插件模式）
+
+```bash
+npm run pack         # 生成 dist/bkms-app-center-<版本>.tgz，并检查包内文件
+```
+
+这是标准的 XBuddy（DSH）组合包插件：`package.json` 声明 `dsh.bundle.patch` 和 `dsh.client`（web），导出 `./client`、`./locale/*.json`、`./cordis.patch.yml`，插件页的标题、描述和图标来自 `locale/*.json` 与 `assets/icon.svg`，设置来自导出的 `Config`（schemastery）；没有运行时依赖和安装脚本；DSH peer 写版本范围。`test/package.test.mjs` 锁定这些约定。
+
+安装：XBuddy 左侧栏 **插件 → 添加插件**，填入 `.tgz` 的本地绝对路径，安装后点**立即启用**。也可以由 plugin-center 按中心目录分发。发布包不含 `demo/`，所以试用模式（示例应用）只在开发链接方式下可用。
+
+## 在本机 XBuddy 中试用（开发链接）
 
 ```bash
 node scripts/xbuddy-profile.mjs link --samples

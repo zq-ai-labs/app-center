@@ -1,2 +1,4 @@
 allowBuilds:
   esbuild: true
+# Host-provided peers (@deepseek-ai/dsh, cordis) come from the XBuddy profile, never from npm.
+autoInstallPeers: false

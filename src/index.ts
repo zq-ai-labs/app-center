@@ -1,5 +1,6 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import z from '@deepseek-ai/schemastery'
 import { API_PATH, createApi } from './api.js'
 import { AppCenter } from './core/center.js'
 import { appSkill, installableSkill, type AppSkill } from './core/skills.js'
@@ -14,23 +15,26 @@ export { appSkill, installableSkill } from './core/skills.js'
 
 export const name = 'bkms-app-center'
 
-export interface Config {
-  /** Ask before draft actions too. Off by default: drafts are reviewed in the workbench before anything is sent. */
+/** Plugin settings, edited on the XBuddy plugin page (labels in locale/*.json). */
+export const Config = z.object({
+  confirmDrafts: z.boolean().default(false).description('草稿类动作也先请用户确认（默认不确认：草稿发送前会在工作台人工审核）'),
+  resident: z.array(z.string()).default(['mail.search']).description('同时注册为独立工具的只读动作，写成“应用.动作”，最多 5 个'),
+  dataDir: z.string().default('').description('数据目录；留空使用 Profile 目录下的 .bkms-app-center'),
+  // Trial mode: register the sample apps from demo/ (labelled 示例, sample data only) and, when no plugin center is
+  // installed, a sample catalog whose installs complete locally. demo/ is not in the published package.
+  sampleApps: z.boolean().default(false).description('试用模式：加载示例应用（只有示例数据，发布包中不可用）'),
+})
+
+export interface AppCenterConfig {
   confirmDrafts?: boolean
-  /** Read actions that also get their own tool, as `app.action` (at most five). */
   resident?: string[]
-  /** Data folder override; defaults to `.bkms-app-center` in the profile folder. */
   dataDir?: string
-  /**
-   * Trial mode: register the sample apps from `demo/` (labelled 示例, sample data only) and, when no plugin center
-   * is installed, a sample catalog whose installs complete locally. Off by default; `demo/` is not published.
-   */
   sampleApps?: boolean
 }
 
 const LOCAL_USER: UserRef = { tenantId: 'local', userId: 'local', name: '本机用户' }
 
-export function apply(ctx: any, config: Config = {}): void {
+export function apply(ctx: any, config: AppCenterConfig = {}): void {
   // Cordis throws on reading an undeclared service property, so optional services are only read through `get`.
   const optional = (name: string): any => { try { return ctx.get?.(name) } catch { return undefined } }
   const profile = optional('profileContext')
