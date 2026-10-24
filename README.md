@@ -13,7 +13,7 @@ XBuddy（DSH）插件：应用目录、应用登记，以及把合同、标书�
 | 结果 | 先结论后入口；草稿写明“尚未发送”；外部内容加标记；对话里显示可点击卡片（`tool.call.toolview`） |
 | 安装 | 通过 plugin-center 的 `bkmsPluginCenter` 服务安装目录里的应用，等应用登记后在同一对话继续 |
 | 任务与审计 | 任务索引和对话调用记录按企业用户（`@bkms/base` 登录）存放在 Profile 目录 `.bkms-app-center/` |
-| 页面 | 左侧栏“应用中心”：搜索、分类、卡片、详情（含“AI 看到的用法”）、我的任务、对话记录 |
+| 页面 | 左侧栏“应用中心”，沿用企业工具集市的界面：搜索、分类、卡片；点击卡片即使用，未安装的自动下载安装后打开 |
 
 宿主服务（tools、skills、connection、bkmsApi、bkmsPluginCenter）都是可选的，缺哪个就少哪部分功能。
 

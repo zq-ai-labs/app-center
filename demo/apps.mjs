@@ -142,12 +142,12 @@ export function registerContract(appCenter) {
 
 /** The central catalog the demo plugin center serves: two installed apps and one installable. */
 export const demoCatalog = [
-  { name: '业务邮件', packageName: 'bkms-workbench', url: 'demo://p/bkms-workbench', version: '0.1.7', artifact: { size: 1468006, version: '0.1.7', restart: { mode: 'none' } }, usage: 128,
+  { name: '业务邮件', packageName: 'bkms-workbench', url: 'demo://p/bkms-workbench', version: '0.1.7', artifact: { size: 1468006, version: '0.1.7', restart: { mode: 'none' } }, usage: 886000,
     app: { id: 'mail', category: '办公', summary: '查找邮件往来、待决策事项和回复草稿', icon: '邮', permissions: ['邮箱读取', '工作台草稿'], roles: ['sales', 'legal', 'bid'], changelog: '新增对话中查找邮件' } },
-  { name: '标书', packageName: 'xbuddy-bid-writer', url: 'demo://p/xbuddy-bid-writer', version: '0.1.0', artifact: { size: 27262976, version: '0.1.0', restart: { mode: 'none' } }, usage: 46,
+  { name: '标书', packageName: 'xbuddy-bid-writer', url: 'demo://p/xbuddy-bid-writer', version: '0.1.0', artifact: { size: 27262976, version: '0.1.0', restart: { mode: 'none' } }, usage: 463000,
     app: { id: 'bid', category: '投标', summary: '解析招标文件、编写标书、检查响应', icon: '标', permissions: ['读取本地文件', '企业知识库'], roles: ['bid'], changelog: '新增响应完整性检查' } },
-  { name: '合同', packageName: '@bkms/app-contract', url: 'demo://p/app-contract', version: '1.2.0', artifact: { size: 1258291, version: '1.2.0', restart: { mode: 'none' } }, usage: 73,
+  { name: '合同', packageName: '@bkms/app-contract', url: 'demo://p/app-contract', version: '1.2.0', artifact: { size: 1258291, version: '1.2.0', restart: { mode: 'none' } }, usage: 1205000,
     app: { id: 'contract', category: '法务', summary: '合同风险评审、按模板起草', icon: '审', permissions: ['邮箱读取（附件）', '读取本地文件'], roles: ['legal', 'sales'], changelog: '新增按报价起草' } },
-  { name: '报销助手', packageName: '@bkms/app-expense', url: 'demo://p/app-expense', version: '0.3.0', artifact: { size: 860160, version: '0.3.0', restart: { mode: 'reload' } }, usage: 210,
+  { name: '报销助手', packageName: '@bkms/app-expense', url: 'demo://p/app-expense', version: '0.3.0', artifact: { size: 860160, version: '0.3.0', restart: { mode: 'reload' } }, usage: 210400,
     app: { id: 'expense', category: '财务', summary: '识别发票、填写报销单、查报销进度', icon: '报', permissions: ['读取本地文件'], roles: ['all'], changelog: '支持全电发票' } },
 ]
