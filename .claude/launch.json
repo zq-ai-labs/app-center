@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "app-center-demo", "runtimeExecutable": "node", "runtimeArgs": ["demo/server.mjs", "4317"], "port": 4317 }
+  ]
+}

@@ -1,0 +1,5 @@
+# 应用中心：应用登记服务、对话工具与应用中心页面。宿主服务（tools、skills、connection、bkmsApi、bkmsPluginCenter）都按可选使用。
+- insert:
+    - id: bkms-app-center
+      name: '@bkms/app-center'
+      config: {}
