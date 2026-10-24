@@ -80,31 +80,54 @@ export function createFakeHost({ approve = async () => true, services = {} } = {
   return { ctx, provided, tools, skills, routes, logs, callTool, skillCatalog, fetchRoute, dispose: () => { while (disposers.length) disposers.pop()() } }
 }
 
-/** A plugin center that "installs" an app after a short download and lets the demo register it. */
-export function createFakePluginCenter({ entries, onInstalled, stepMs = 300 }) {
+/**
+ * A plugin center that installs apps by itself, like the real sync engine: shortly after start it installs the listed
+ * apps one at a time (download, install, apply), reports progress through status(), and retries on request.
+ * Nobody else can install: there is no install() on the service.
+ */
+export function createFakePluginCenter({ entries, autoInstall = [], failOnce = [], onInstalled, stepMs = 300, startDelayMs = 0 }) {
   const progress = {}
   const notices = []
+  const rows = {}
+  const failedOnce = new Set()
+  let queue = Promise.resolve()
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+  const row = entry => (rows[entry.packageName] ??= { packageName: entry.packageName, name: entry.name, failures: 0, lastError: '' })
+  async function install(entry) {
+    const total = entry.artifact?.size ?? 1
+    progress[entry.packageName] = { phase: 'queued', received: 0, total }
+    await wait(stepMs)
+    for (let i = 1; i <= 4; i++) { await wait(stepMs); progress[entry.packageName] = { phase: 'downloading', received: Math.round(total * i / 4), total } }
+    if (failOnce.includes(entry.app.id) && !failedOnce.has(entry.app.id)) {
+      failedOnce.add(entry.app.id)
+      progress[entry.packageName] = { phase: 'failed', received: total, total, error: '下载中断（模拟网络错误）' }
+      Object.assign(row(entry), { failures: row(entry).failures + 1, lastError: '下载中断（模拟网络错误）' })
+      return
+    }
+    progress[entry.packageName] = { phase: 'installing', received: total, total }
+    await wait(stepMs)
+    progress[entry.packageName] = { phase: 'applying', received: total, total }
+    await wait(stepMs)
+    progress[entry.packageName] = { phase: 'done', received: total, total }
+    Object.assign(row(entry), { failures: 0, lastError: '' })
+    const mode = entry.artifact?.restart?.mode
+    if (mode === 'reload' || mode === 'restart') notices.push({ kind: mode, at: Date.now(), items: [{ packageName: entry.packageName }] })
+    else onInstalled?.(entry)
+  }
+  const enqueue = entry => { queue = queue.then(() => install(entry)).catch(() => {}); return queue }
+  for (const entry of entries) if (autoInstall.includes(entry.app.id)) row(entry)
+  setTimeout(() => { for (const entry of entries) if (autoInstall.includes(entry.app.id)) void enqueue(entry) }, startDelayMs)
   return {
     version: 1,
     async catalog() { return { center: 'demo://plugin-center/plugins.json', plugins: entries } },
-    async install(url) {
-      const entry = entries.find(item => item.url === url)
-      if (!entry) throw new Error('该插件尚未上传并发布 .tgz 包')
-      const total = entry.artifact?.size ?? 1
-      progress[entry.packageName] = { phase: 'downloading', received: 0, total }
-      ;(async () => {
-        for (let i = 1; i <= 4; i++) { await new Promise(r => setTimeout(r, stepMs)); progress[entry.packageName] = { phase: 'downloading', received: Math.round(total * i / 4), total } }
-        progress[entry.packageName] = { phase: 'installing', received: total, total }
-        await new Promise(r => setTimeout(r, stepMs))
-        progress[entry.packageName] = { phase: 'applying', received: total, total }
-        await new Promise(r => setTimeout(r, stepMs))
-        progress[entry.packageName] = { phase: 'done', received: total, total }
-        const mode = entry.artifact?.restart?.mode
-        if (mode === 'reload' || mode === 'restart') notices.push({ kind: mode, at: Date.now(), items: [{ packageName: entry.packageName }] })
-        else onInstalled?.(entry)
-      })()
+    status() { return { available: true, progress, notices, plugins: Object.values(rows) } },
+    retry(packageName) {
+      const entry = entries.find(item => item.packageName === packageName)
+      if (!entry) throw new Error('没有这个插件')
+      Object.assign(row(entry), { failures: 0, lastError: '' })
+      delete progress[packageName]
+      void enqueue(entry)
       return { available: true }
     },
-    status() { return { available: true, progress, notices } },
   }
 }

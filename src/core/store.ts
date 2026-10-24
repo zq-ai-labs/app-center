@@ -40,7 +40,7 @@ export class TaskIndex {
 
 export interface ActivityEntry {
   at: string
-  kind: 'call' | 'install' | 'denied' | 'invalid'
+  kind: 'call' | 'denied' | 'invalid'
   origin: 'chat' | 'page'
   sessionId?: string
   app: string

@@ -37,11 +37,8 @@ const SCENARIOS: Scenario[] = [
     { kind: 'tool', tool: 'app_call', args: { app: 'mail', action: 'draft_reply', args: { item: 103, instructions: '报三年期服务' } } },
     { kind: 'ai', text: '回复草稿已经放进“待我决策”，尚未发送。请在工作台审核后再发出。' },
   ] },
-  { id: 's4', title: '审合同附件（对话中安装合同应用）', note: '合同应用未安装：先按占位技能提示用户，确认后安装，装好后在同一对话继续。', steps: [
+  { id: 's4', title: '审合同附件（转交合同应用）', note: '合同应用由插件中心在启动后自动安装；还没装好时，结果会说明正在安装。', steps: [
     { kind: 'user', text: '把王经理那封邮件的合同附件审一下，我们是乙方' },
-    { kind: 'skill', name: 'app-contract' },
-    { kind: 'ai', text: '审合同需要“合同”应用（约 1.2 MB，需要读取邮件附件和本地文件的权限，安装后无需重启）。我先帮你安装。' },
-    { kind: 'tool', tool: 'app_call', args: { app: 'contract', action: 'install' } },
     { kind: 'skill', name: 'app-contract' },
     { kind: 'tool', tool: 'app_call', args: { app: 'mail', action: 'handoff', args: { item: 102, target: 'contract', stance: '乙方' } } },
     { kind: 'ai', text: '已经把“TH-100采购合同（草稿）.docx”交给合同应用评审，我方立场为乙方，大约 3 分钟出结果。' },

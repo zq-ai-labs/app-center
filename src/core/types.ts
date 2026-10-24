@@ -126,7 +126,8 @@ export interface CatalogEntry {
   usage?: number
 }
 
-export type AppState = 'installed' | 'installable' | 'update' | 'installing' | 'pending'
+/** installed: registered and usable; the rest describe the plugin center's automatic install before the app registers. */
+export type AppState = 'installed' | 'preparing' | 'installing' | 'failed' | 'pending'
 
 /** What the page and the skill catalog show for one app. */
 export interface AppView {
@@ -158,10 +159,10 @@ export interface InstallProgress {
   effect?: 'none' | 'reload' | 'restart'
 }
 
-/** The plugin center service (`bkmsPluginCenter`, plugin-center 0.3.0). */
+/** The plugin center service (`bkmsPluginCenter`, plugin-center 0.3.0). Read-only apart from retry: installs and upgrades happen inside the plugin center. */
 export interface PluginCenterService {
   version: 1
   catalog(): Promise<{ center: string; plugins: CatalogEntry[] }>
-  install(url: string): Promise<unknown>
   status(since?: number): any
+  retry(packageName: string): unknown
 }

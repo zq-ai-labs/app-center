@@ -1,5 +1,6 @@
 export type Risk = 'read' | 'draft' | 'write'
-export type AppState = 'installed' | 'installable' | 'update' | 'installing' | 'pending'
+/** installed: usable; the others describe the plugin center's automatic install before the app registers. */
+export type AppState = 'installed' | 'preparing' | 'installing' | 'failed' | 'pending'
 export interface InstallProgress { phase: string; received?: number; total?: number; message?: string; effect?: 'none' | 'reload' | 'restart' }
 export interface AppView {
   id: string; name: string; category: string; summary: string; description?: string; icon?: string
@@ -8,7 +9,7 @@ export interface AppView {
   actions: { name: string; description: string; risk: Risk; long: boolean }[]
   progress?: InstallProgress
 }
-export interface AppsResponse { apps: AppView[]; canInstall: boolean; catalogError: string; user: { tenantId: string; name: string } }
+export interface AppsResponse { apps: AppView[]; pluginCenter: boolean; catalogError: string; user: { tenantId: string; name: string } }
 export interface AppLink { app: string; page?: string; route?: string; label?: string }
 export interface TaskRecord { id: string; app: string; action: string; status: string; title: string; summary?: string; link?: AppLink; createdAt: number; updatedAt: number }
 export interface ActivityEntry { at: string; kind: string; origin: string; app: string; action: string; args?: string; result: string; ok: boolean; confirmed: boolean }
@@ -30,16 +31,8 @@ export async function api<T>(action: string, payload: Record<string, unknown> = 
   return body.value as T
 }
 
-export function formatSize(bytes?: number): string {
-  if (!bytes) return '—'
-  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-  return `${Math.max(1, Math.round(bytes / 1024))} KB`
-}
 
-export const RISK_LABEL: Record<Risk, string> = { read: '只读', draft: '草稿', write: '需确认' }
-export const STATE_LABEL: Record<AppState, string> = { installed: '已安装', installable: '可安装', update: '有更新', installing: '安装中', pending: '待生效' }
 export const TASK_LABEL: Record<string, string> = { queued: '排队中', running: '进行中', 'needs-review': '待审核', done: '已完成', failed: '失败' }
-export const PHASE_LABEL: Record<string, string> = { queued: '排队中', downloading: '下载中', installing: '安装中', applying: '启用中', waiting: '等待加载', done: '已完成', failed: '失败' }
 
 /** Host navigation, bound when the client plugin starts. */
 export const host: { openPanel?: (id: string) => void; startChat?: (text: string) => boolean } = {}

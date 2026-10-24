@@ -20,8 +20,9 @@ async function boot() {
   let contract
   const pending = { approval: undefined }
   const holder = {}
+  // The plugin center installs apps by itself after start; 报销助手 fails once so the retry path can be tried.
   const pluginCenter = createFakePluginCenter({
-    entries: demoCatalog, stepMs: 450,
+    entries: demoCatalog, autoInstall: ['contract', 'expense'], failOnce: ['expense'], startDelayMs: 6000, stepMs: 700,
     onInstalled: entry => { if (entry.app.id === 'contract') contract = registerContract(holder.appCenter) },
   })
   const host = createFakeHost({

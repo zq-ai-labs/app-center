@@ -1,5 +1,5 @@
 import { describeParams, exampleArgs } from './schema.js'
-import type { AppManifest, AppView } from './types.js'
+import type { AppManifest } from './types.js'
 
 const RISK_TEXT = { read: '只读，直接执行', draft: '生成草稿，不会发送', write: '会修改内部数据，执行前需要用户确认' }
 
@@ -34,33 +34,7 @@ export function appSkill(manifest: AppManifest): AppSkill {
   return { name: skillName(manifest.id), description: manifest.summary, whenToUse: whenToUse(manifest), content: lines.join('\n') }
 }
 
-/** Layer 0 placeholder for an app the user may install but has not. */
-export function installableSkill(app: AppView): AppSkill {
-  const size = app.size ? `约 ${formatSize(app.size)}` : '大小未知'
-  const effect = app.restart === 'restart' ? '安装后需要重启 XBuddy' : app.restart === 'reload' ? '安装后需要刷新界面' : '安装后无需重启，可在当前对话继续使用'
-  return {
-    name: skillName(app.id),
-    description: `${app.summary}（需安装）`,
-    content: [
-      `# ${app.name}（应用 id：${app.id}，尚未安装）`,
-      '',
-      app.summary,
-      '',
-      `- 大小：${size}`,
-      `- 需要的权限：${app.permissions.length ? app.permissions.join('、') : '无'}`,
-      `- ${effect}`,
-      '',
-      `用户要用这个应用时，先告诉用户应用名称和大小，用户同意后调用 \`app_call({ app: "${app.id}", action: "install" })\`。安装会弹窗请用户确认；装好后重新加载技能 \`${skillName(app.id)}\` 获取用法。`,
-    ].join('\n'),
-  }
-}
-
 function whenToUse(manifest: AppManifest): string {
   return manifest.actions.flatMap(action => action.examples.slice(0, 1)).slice(0, 4).map(text => `“${text}”`).join('、')
 }
 
-export function formatSize(bytes: number): string {
-  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)}MB`
-  if (bytes >= 1024) return `${Math.round(bytes / 1024)}KB`
-  return `${bytes}B`
-}

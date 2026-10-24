@@ -30,7 +30,7 @@ export function ToolCard(props: any) {
   const block = props.block
   if (phase !== 'result') {
     let label = '正在调用应用'
-    try { const args = JSON.parse(block?.argsRaw ?? block?.call?.argsRaw ?? '{}'); if (args.app) label = args.action === 'install' ? `正在安装应用 ${args.app}` : `正在调用 ${args.app}.${args.action ?? ''}` } catch { /* partial arguments */ }
+    try { const args = JSON.parse(block?.argsRaw ?? block?.call?.argsRaw ?? '{}'); if (args.app) label = `正在调用 ${args.app}.${args.action ?? ''}` } catch { /* partial arguments */ }
     return <div className="bac bac-tc pending"><span className="bac-tc-dot" />{label}…</div>
   }
   const meta = block?.meta as CardMeta | undefined

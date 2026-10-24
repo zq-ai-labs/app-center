@@ -1,5 +1,5 @@
 import type { AppCenter } from './core/center.js'
-import { appSkill, installableSkill } from './core/skills.js'
+import { appSkill } from './core/skills.js'
 import type { TaskStatus, UserRef } from './core/types.js'
 
 export const API_PATH = '/api/bkms-app-center'
@@ -8,8 +8,8 @@ const json = (status: number, body: unknown) => new Response(JSON.stringify(body
 export interface ApiHost {
   center: AppCenter
   user(): UserRef
-  /** Whether installs are possible (the plugin center service is present). */
-  canInstall(): boolean
+  /** Whether the plugin center service is present (it installs and upgrades every app). */
+  hasPluginCenter(): boolean
 }
 
 /** The page's single JSON endpoint: `{ action, ... }` in, `{ ok, value | error }` out. */
@@ -32,21 +32,20 @@ async function dispatch(host: ApiHost, body: any): Promise<unknown> {
   switch (body.action) {
     case 'apps': {
       const entries = await center.catalog(body.refresh === true)
-      return { apps: center.views(entries), canInstall: host.canInstall(), catalogError: center.catalogError, user: { tenantId: user.tenantId, name: user.name ?? user.userId } }
+      return { apps: center.views(entries), pluginCenter: host.hasPluginCenter(), catalogError: center.catalogError, user: { tenantId: user.tenantId, name: user.name ?? user.userId } }
     }
     case 'app': {
       const view = center.views().find(item => item.id === body.id)
       if (!view) throw new Error('应用不存在或没有权限。')
       const manifest = center.registry.get(view.id)
-      // The guide the AI loads for this app, so users can see what the conversation knows.
-      const skill = manifest ? appSkill(manifest) : installableSkill(view)
-      return { app: view, skill }
+      // The guide the AI loads for this app; apps not installed yet have none.
+      return { app: view, skill: manifest ? appSkill(manifest) : null }
     }
-    case 'install': {
+    case 'retry': {
+      // Installs are the plugin center's; the page can only ask it to try a failed one again.
       if (typeof body.id !== 'string') throw new Error('需要应用 id。')
-      // The click is the user's confirmation; the install runs on and the page polls `apps` for progress.
-      void center.call(body.id, 'install', {}, { user, subagent: false, confirmed: true, origin: 'page', signal: new AbortController().signal })
-      return { started: true }
+      await center.retry(body.id)
+      return { retried: true }
     }
     case 'tasks': return { tasks: center.tasks.list(user, { app: typeof body.app === 'string' ? body.app : undefined, status: typeof body.status === 'string' ? body.status as TaskStatus : undefined }) }
     case 'activity': return { activity: center.activity.list(user, 200) }

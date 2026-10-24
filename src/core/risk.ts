@@ -3,8 +3,7 @@ import type { Risk } from './types.js'
 export type RiskDecision = { kind: 'allow' } | { kind: 'ask'; reason: string } | { kind: 'deny'; reason: string }
 
 export interface RiskInput {
-  /** The action's level, or `install` for the reserved install action. */
-  risk: Risk | 'install'
+  risk: Risk
   subagent: boolean
   /** Ask before draft actions too (setting; off by default because drafts are reviewed before sending). */
   confirmDrafts: boolean

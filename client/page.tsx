@@ -3,8 +3,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, host, openApp, type AppsResponse, type AppView } from './lib'
 
 // Same layout, proportions and tokens as the enterprise tool marketplace (@bkms/ui-skills ToolsMarketplace):
-// fixed title and search, wrapping category tabs, a scrolling grid of cards. A card is the only control:
-// clicking it uses the app — installed apps open, others install first and then open.
+// fixed title and search, wrapping category tabs, a scrolling grid of cards. A card is the only control: clicking it
+// uses the app. The plugin center installs and upgrades every app by itself; an app it is still installing opens as
+// soon as it is ready, and a failed install is retried through the plugin center.
 
 const ALL = ''
 const CATEGORY_ORDER = ['通用工具', '办公', '财务', '法务', '人力']
@@ -23,16 +24,19 @@ function SearchIcon() {
   return <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><circle cx="9" cy="9" r="6" /><path d="M13.5 13.5L17 17" strokeLinecap="round" /></svg>
 }
 
-/** What a card says under the description while it is being made usable. */
+/** What a card says under the description while the plugin center is still making the app available. */
 function statusLine(app: AppView): string | undefined {
   const p = app.progress
-  if (app.state === 'installing' && p) {
-    const percent = p.total && p.received ? Math.min(100, Math.round(p.received / p.total * 100)) : undefined
-    return p.phase === 'waiting' ? '正在准备，马上打开…' : `正在下载安装${percent !== undefined ? ` ${percent}%` : '…'}`
+  switch (app.state) {
+    case 'preparing': return '等待插件中心安装…'
+    case 'installing': {
+      const percent = p?.total && p.received ? Math.min(100, Math.round(p.received / p.total * 100)) : undefined
+      return p?.phase === 'waiting' ? '正在加载，马上可用…' : `插件中心正在安装${percent !== undefined ? ` ${percent}%` : '…'}`
+    }
+    case 'pending': return p?.effect === 'restart' ? '已安装，重启 XBuddy 后可用' : '已安装，刷新界面后可用'
+    case 'failed': return `安装失败，点击重试：${p?.message ?? ''}`
+    default: return undefined
   }
-  if (app.state === 'pending') return app.progress?.effect === 'restart' ? '已安装，重启 XBuddy 后可用' : '已安装，刷新界面后可用'
-  if (p?.phase === 'failed') return `安装失败，点击重试：${p.message ?? ''}`
-  return undefined
 }
 
 export function AppCenterPage() {
@@ -60,13 +64,13 @@ export function AppCenterPage() {
       setData(value); setError('')
       for (const app of value.apps) {
         if (!pendingOpen.current.has(app.id)) continue
-        if (app.state === 'installed' || app.state === 'update') { pendingOpen.current.delete(app.id); open(app) }
-        else if (app.state === 'pending' || app.progress?.phase === 'failed') pendingOpen.current.delete(app.id)
+        if (app.state === 'installed') { pendingOpen.current.delete(app.id); open(app) }
+        else if (app.state === 'pending' || app.state === 'failed') pendingOpen.current.delete(app.id)
       }
     } catch (failure) { if (mounted.current) setError(failure instanceof Error ? failure.message : String(failure)) }
   }, [open])
 
-  const busy = data?.apps.some(app => app.state === 'installing') ?? false
+  const busy = data?.apps.some(app => app.state === 'installing' || app.state === 'preparing') ?? false
   useEffect(() => {
     mounted.current = true
     void load()
@@ -76,11 +80,12 @@ export function AppCenterPage() {
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(''), 5000); return () => clearTimeout(timer) }, [notice])
 
   const use = async (app: AppView) => {
-    if (app.state === 'installed' || app.state === 'update') { open(app); return }
-    if (app.state === 'installing' || app.state === 'pending') return
-    if (!data?.canInstall) { setNotice(`“${app.name}”尚未安装，当前客户端没有插件中心服务，请联系管理员。`); return }
+    if (app.state === 'installed') { open(app); return }
+    if (app.state === 'pending') { setNotice(`“${app.name}”已安装，${app.progress?.effect === 'restart' ? '重启 XBuddy' : '刷新界面'}后即可使用。`); return }
+    // Installing is the plugin center's job: wait for it and open the app when it is ready.
     pendingOpen.current.add(app.id)
-    try { await api('install', { id: app.id }); await load() }
+    if (app.state !== 'failed') { setNotice(`“${app.name}”正在由插件中心安装，完成后会自动打开。`); return }
+    try { await api('retry', { id: app.id }); setNotice(`已请插件中心重新安装“${app.name}”，完成后会自动打开。`); await load() }
     catch (failure) { pendingOpen.current.delete(app.id); setError(failure instanceof Error ? failure.message : String(failure)) }
   }
 
@@ -114,7 +119,7 @@ export function AppCenterPage() {
         {apps.map(app => {
           const status = statusLine(app)
           return <button type="button" key={app.id} className="bac-market-card" data-state={app.state} aria-busy={app.state === 'installing'}
-            aria-label={`${app.name}。${app.state === 'installed' || app.state === 'update' ? '使用' : '安装并使用'}`} onClick={() => void use(app)}>
+            aria-label={`${app.name}。${app.state === 'installed' ? '使用' : statusLine(app) ?? ''}`} onClick={() => void use(app)}>
             <span className="bac-market-icon" data-category={CATEGORY_KEY[app.category] ?? 'general'} aria-hidden="true">{app.icon || app.name.slice(0, 1)}</span>
             <span className="bac-market-content">
               <span className="bac-market-title">
@@ -123,7 +128,7 @@ export function AppCenterPage() {
               </span>
               <span className="bac-market-description bac-ellipsis" title={app.summary}>{app.summary}</span>
               {status
-                ? <span className={`bac-market-status${app.progress?.phase === 'failed' ? ' failed' : ''}`}>{app.state === 'installing' && <i className="bac-market-spinner" aria-hidden="true" />}<span className="bac-ellipsis" title={status}>{status}</span></span>
+                ? <span className={`bac-market-status${app.state === 'failed' ? ' failed' : ''}`}>{(app.state === 'installing' || app.state === 'preparing') && <i className="bac-market-spinner" aria-hidden="true" />}<span className="bac-ellipsis" title={status}>{status}</span></span>
                 : <span className="bac-market-usage"><SparkleIcon /><span className="bac-ellipsis">{usageText(app.usage)}</span></span>}
             </span>
             {app.state === 'installing' && app.progress?.total && app.progress.received

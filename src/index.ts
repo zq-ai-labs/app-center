@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import z from '@deepseek-ai/schemastery'
 import { API_PATH, createApi } from './api.js'
 import { AppCenter } from './core/center.js'
-import { appSkill, installableSkill, type AppSkill } from './core/skills.js'
+import { appSkill, type AppSkill } from './core/skills.js'
 import type { PluginCenterService, UserRef } from './core/types.js'
 import { APP_CALL, appCallTool, callerOf, residentSpecs, residentTool, taskStatusTool, type ToolHost } from './tools.js'
 
@@ -11,7 +11,7 @@ export type { AppCenterService, CallOutcome } from './core/center.js'
 export type * from './core/types.js'
 export { AppCenter } from './core/center.js'
 export { validateManifest, ManifestError } from './core/registry.js'
-export { appSkill, installableSkill } from './core/skills.js'
+export { appSkill } from './core/skills.js'
 
 export const name = 'bkms-app-center'
 
@@ -21,7 +21,7 @@ export const Config = z.object({
   resident: z.array(z.string()).default(['mail.search']).description('同时注册为独立工具的只读动作，写成“应用.动作”，最多 5 个'),
   dataDir: z.string().default('').description('数据目录；留空使用 Profile 目录下的 .bkms-app-center'),
   // Trial mode: register the sample apps from demo/ (labelled 示例, sample data only) and, when no plugin center is
-  // installed, a sample catalog whose installs complete locally. demo/ is not in the published package.
+  // installed, a sample plugin center that installs the rest automatically. demo/ is not in the published package.
   sampleApps: z.boolean().default(false).description('试用模式：加载示例应用（只有示例数据，发布包中不可用）'),
 })
 
@@ -84,7 +84,7 @@ export function apply(ctx: any, config: AppCenterConfig = {}): void {
       }
     }
     child.effect(() => { syncResident(); const stop = center.registry.onChange(syncResident); return () => { stop(); for (const dispose of resident.values()) dispose(); resident.clear() } }, 'bkms-app-center: resident tools')
-    // The risk gate: read runs, draft runs (or asks when configured), write and install ask, delegated agents only read.
+    // The risk gate: read runs, draft runs (or asks when configured), write asks, delegated agents only read.
     child.on('tools/pre-execute', async (exec: any, next: () => Promise<any>) => {
       if (exec?.name !== APP_CALL) return next()
       const args = exec.arguments ?? {}
@@ -96,14 +96,13 @@ export function apply(ctx: any, config: AppCenterConfig = {}): void {
     })
   })
 
-  // Layers 0 and 1: one skill per app. The host keeps the catalog in every conversation and loads the body on demand.
+  // Layers 0 and 1: one skill per registered app. The host keeps the catalog in every conversation and loads the body on
+  // demand. Apps the plugin center is still installing get their skill when they register.
   ctx.inject(['skills'], (child: any) => {
     const registered = new Map<string, { key: string; dispose: () => void }>()
     const sync = () => {
       const skills = new Map<string, AppSkill>()
-      const views = center.views()
       for (const manifest of center.registry.list()) skills.set(manifest.id, appSkill(manifest))
-      for (const view of views) if (view.state === 'installable' || view.state === 'installing') skills.set(view.id, installableSkill(view))
       for (const [id, item] of registered) if (!skills.has(id)) { item.dispose(); registered.delete(id) }
       for (const [id, skill] of skills) {
         const key = JSON.stringify(skill)
@@ -120,7 +119,7 @@ export function apply(ctx: any, config: AppCenterConfig = {}): void {
   if (config.sampleApps) void loadSamples(center, () => pluginCenter, service => { pluginCenter ??= service; void center.catalog(true) }, log)
 
   ctx.inject(['connection'], (child: any) => {
-    const handle = createApi({ center, user, canInstall: () => pluginCenter !== undefined })
+    const handle = createApi({ center, user, hasPluginCenter: () => pluginCenter !== undefined })
     child.effect(() => child.connection.fetch.register({ path: API_PATH, methods: ['POST'], requestBody: 'buffered', fetch: handle }), 'bkms-app-center: page api')
   })
 }
@@ -147,7 +146,8 @@ async function loadSamples(center: AppCenter, current: () => PluginCenterService
     apps.registerBid(sample)
     if (!current()) {
       const catalog = apps.demoCatalog.map((entry: any) => ({ ...entry, name: `${entry.name}（示例）`, app: { ...entry.app, summary: `${entry.app.summary}（示例）` } }))
-      useCenter(fake.createFakePluginCenter({ entries: catalog, stepMs: 500, onInstalled: (entry: any) => { if (entry.app.id === 'contract') contract = apps.registerContract(sample) } }))
+      // Like the real plugin center: apps not yet installed install by themselves shortly after start.
+      useCenter(fake.createFakePluginCenter({ entries: catalog, autoInstall: ['contract', 'expense'], startDelayMs: 3000, stepMs: 700, onInstalled: (entry: any) => { if (entry.app.id === 'contract') contract = apps.registerContract(sample) } }))
     }
     log('info', 'app-center: sample apps registered (trial mode)')
   } catch (error) {

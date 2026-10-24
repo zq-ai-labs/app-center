@@ -3,22 +3,19 @@ import { join } from 'node:path'
 import { AppRegistry } from './registry.js'
 import { decideRisk, fillTemplate, type RiskDecision } from './risk.js'
 import { describeParams, exampleArgs, validate } from './schema.js'
-import { formatSize, skillName } from './skills.js'
+import { skillName } from './skills.js'
 import { ActivityLog, summarizeArgs, TaskIndex } from './store.js'
-import type { ActionHandler, ActionResult, AppManifest, AppView, CatalogEntry, ExecContext, InstallProgress, PluginCenterService, TaskRecord, UserRef } from './types.js'
+import type { ActionHandler, ActionResult, AppManifest, AppState, AppView, CatalogEntry, ExecContext, InstallProgress, PluginCenterService, TaskRecord, UserRef } from './types.js'
 
 export type CallOutcome =
   | { ok: true; app: string; appName: string; action: string; result: ActionResult; renamedFrom?: string; page?: string }
-  | { ok: false; app: string; action: string; code: 'unknown_app' | 'not_installed' | 'unknown_action' | 'invalid_args' | 'denied' | 'failed' | 'install_failed'; error: string; usage?: string[]; example?: unknown }
+  | { ok: false; app: string; action: string; code: 'unknown_app' | 'not_installed' | 'unknown_action' | 'invalid_args' | 'denied' | 'failed'; error: string; usage?: string[]; example?: unknown }
 
 export interface AppCenterOptions {
   dataDir: string
   pluginCenter: () => PluginCenterService | undefined
   confirmDrafts?: () => boolean
   log?: (level: 'info' | 'warn', message: string) => void
-  installTimeoutMs?: number
-  registrationTimeoutMs?: number
-  pollMs?: number
   catalogTtlMs?: number
 }
 
@@ -31,16 +28,22 @@ export interface AppCenterService {
   tasks: { report(task: TaskRecord): TaskRecord; get(user: UserRef, id: string): TaskRecord | undefined }
 }
 
-const compareVersions = (a = '', b = ''): number => {
-  const parse = (v: string) => (/^v?(\d+)\.(\d+)\.(\d+)/.exec(v) ?? []).slice(1, 4).map(Number)
-  const x = parse(a), y = parse(b)
-  if (x.length < 3 || y.length < 3) return 0
-  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i] ? 1 : -1
-  return 0
+/** What the AI tells the user about an app the plugin center has not finished installing. */
+function notInstalledText(name: string, sync: { state: AppState; progress?: InstallProgress }): string {
+  const p = sync.progress
+  switch (sync.state) {
+    case 'installing': return `“${name}”正在由插件中心自动安装${p?.total && p.received ? `（${Math.min(100, Math.round(p.received / p.total * 100))}%）` : ''}，完成后即可使用，请稍后再试。`
+    case 'pending': return `“${name}”已安装，${p?.effect === 'restart' ? '重启 XBuddy' : '刷新界面'}后可用。`
+    case 'failed': return `“${name}”自动安装失败：${p?.message ?? '原因未知'}。请用户到应用中心点击该应用重试。`
+    default: return `“${name}”正在等待插件中心同步安装，稍后即可使用。`
+  }
 }
 const describe = (entry: CatalogEntry): string | undefined => typeof entry.description === 'string' ? entry.description : entry.description?.zh ?? entry.description?.en
 
-/** The app center: registry, catalog merge, conversation calls, installs, tasks and the activity log. */
+/**
+ * The app center: registry, catalog merge, conversation calls, tasks and the activity log.
+ * It never installs anything: the plugin center installs and upgrades every app by its distribution rules.
+ */
 export class AppCenter {
   readonly registry = new AppRegistry()
   readonly tasks: TaskIndex
@@ -49,7 +52,6 @@ export class AppCenter {
   private catalogAt = 0
   private catalogLoading: Promise<CatalogEntry[]> | undefined
   catalogError = ''
-  private readonly progress = new Map<string, InstallProgress>()
   private readonly listeners = new Set<() => void>()
   private usage: Record<string, number>
   private readonly usageFile: string
@@ -113,18 +115,11 @@ export class AppCenter {
       const existing = byId.get(app.id)
       const shared = { latestVersion: latest, size: entry.artifact?.size, permissions: app.permissions ?? [], restart: entry.artifact?.restart?.mode, changelog: app.changelog, packageName: entry.packageName, usage: entry.usage ?? existing?.usage ?? 0 }
       if (existing) {
-        Object.assign(existing, shared, { icon: existing.icon ?? app.icon, state: compareVersions(latest, existing.version) > 0 ? 'update' : 'installed' })
+        // Registered apps are usable; the plugin center upgrades them in the background.
+        Object.assign(existing, shared, { icon: existing.icon ?? app.icon })
       } else {
-        byId.set(app.id, { id: app.id, name: entry.name, category: app.category, summary: app.summary, description: describe(entry), icon: app.icon, state: 'installable', actions: [], ...shared })
-      }
-    }
-    for (const view of byId.values()) {
-      const progress = this.progress.get(view.id)
-      if (progress) {
-        view.progress = progress
-        if (!['done', 'failed'].includes(progress.phase)) view.state = 'installing'
-        // Installed but only usable after a refresh or restart: not installable again, not usable yet.
-        else if (progress.phase === 'done' && progress.effect && progress.effect !== 'none' && view.state === 'installable') view.state = 'pending'
+        // Not registered yet: the plugin center installs it automatically; show where that stands.
+        byId.set(app.id, { id: app.id, name: entry.name, category: app.category, summary: app.summary, description: describe(entry), icon: app.icon, actions: [], ...shared, ...this.syncState(entry) })
       }
     }
     return [...byId.values()].sort((a, b) => a.category.localeCompare(b.category, 'zh') || a.name.localeCompare(b.name, 'zh'))
@@ -133,15 +128,6 @@ export class AppCenter {
   /** The gate for one conversation call, before it runs. */
   async gate(appId: string, action: string, args: unknown, subagent: boolean): Promise<RiskDecision> {
     const confirmDrafts = this.options.confirmDrafts?.() ?? false
-    if (action === 'install') {
-      if (this.registry.has(appId)) return { kind: 'allow' }
-      const entry = (await this.catalog()).find(item => item.app?.id === appId)
-      if (!entry) return { kind: 'allow' } // The call itself explains that the app is unavailable.
-      const effect = entry.artifact?.restart?.mode === 'restart' ? '安装后需要重启 XBuddy' : entry.artifact?.restart?.mode === 'reload' ? '安装后需要刷新界面' : '安装后无需重启'
-      const size = entry.artifact?.size ? `，约 ${formatSize(entry.artifact.size)}` : ''
-      const permissions = entry.app?.permissions?.length ? `；需要权限：${entry.app.permissions.join('、')}` : ''
-      return decideRisk({ risk: 'install', subagent, confirmDrafts, prompt: `安装应用“${entry.name}”${size}${permissions}；${effect}。` })
-    }
     const resolved = this.registry.resolve(appId, action)
     if (!resolved) return { kind: 'allow' }
     const record = args && typeof args === 'object' ? args as Record<string, unknown> : {}
@@ -149,29 +135,28 @@ export class AppCenter {
     return decideRisk({ risk: resolved.spec.risk, subagent, confirmDrafts, prompt })
   }
 
-  /** Run one action (or the reserved install). Never throws: problems come back as guidance the model can act on. */
+  /** Run one action. Never throws: problems come back as guidance the model can act on. */
   async call(appId: string, action: string, rawArgs: unknown, exec: ExecContext): Promise<CallOutcome> {
     const args = rawArgs ?? {}
     const startedAt = new Date().toISOString()
     const outcome = await this.run(appId, action, args, exec)
     try {
       this.activity.append(exec.user, {
-        at: startedAt, kind: action === 'install' ? 'install' : outcome.ok ? 'call' : outcome.code === 'denied' ? 'denied' : outcome.code === 'invalid_args' ? 'invalid' : 'call',
+        at: startedAt, kind: outcome.ok ? 'call' : outcome.code === 'denied' ? 'denied' : outcome.code === 'invalid_args' ? 'invalid' : 'call',
         origin: exec.origin, sessionId: exec.sessionId, app: appId, action: outcome.ok ? outcome.action : action, args: summarizeArgs(args),
         result: outcome.ok ? outcome.result.summary.slice(0, 200) : outcome.error, ok: outcome.ok, confirmed: exec.confirmed,
       })
     } catch (error) { this.options.log?.('warn', `app-center: activity not recorded: ${error instanceof Error ? error.message : error}`) }
-    if (outcome.ok && action !== 'install') { this.usage[appId] = (this.usage[appId] ?? 0) + 1; try { writeFileSync(this.usageFile, JSON.stringify(this.usage)) } catch { /* counts are best effort */ } }
+    if (outcome.ok) { this.usage[appId] = (this.usage[appId] ?? 0) + 1; try { writeFileSync(this.usageFile, JSON.stringify(this.usage)) } catch { /* counts are best effort */ } }
     return outcome
   }
 
   private async run(appId: string, action: string, args: unknown, exec: ExecContext): Promise<CallOutcome> {
     if (typeof appId !== 'string' || !appId) return { ok: false, app: String(appId), action, code: 'unknown_app', error: '需要指定应用 id（技能目录里 app-<id> 的 <id> 部分）。' }
-    if (action === 'install') return this.install(appId, exec)
     const manifest = this.registry.get(appId)
     if (!manifest) {
       const entry = (await this.catalog()).find(item => item.app?.id === appId)
-      if (entry) return { ok: false, app: appId, action, code: 'not_installed', error: `应用“${entry.name}”尚未安装${entry.artifact?.size ? `（约 ${formatSize(entry.artifact.size)}）` : ''}。请先征得用户同意，再调用 app_call({ app: "${appId}", action: "install" })。` }
+      if (entry) return { ok: false, app: appId, action, code: 'not_installed', error: notInstalledText(entry.name, this.syncState(entry)) }
       const known = this.registry.list().map(item => item.id).join('、')
       return { ok: false, app: appId, action, code: 'unknown_app', error: `没有 id 为 ${appId} 的应用，或当前用户没有权限。已安装的应用：${known || '无'}。` }
     }
@@ -198,56 +183,27 @@ export class AppCenter {
     catch (error) { this.options.log?.('warn', `app-center: activity not recorded: ${error instanceof Error ? error.message : error}`) }
   }
 
-  installProgress(appId: string): InstallProgress | undefined { return this.progress.get(appId) }
-  private setProgress(appId: string, progress: InstallProgress): void { this.progress.set(appId, progress); this.emit() }
-
-  /** Install an app through the plugin center and wait until it registers (or say what else is needed). */
-  async install(appId: string, exec: ExecContext): Promise<CallOutcome> {
-    const fail = (code: 'denied' | 'install_failed' | 'unknown_app', error: string): CallOutcome => ({ ok: false, app: appId, action: 'install', code, error })
-    if (this.registry.has(appId)) {
-      const manifest = this.registry.get(appId)!
-      return { ok: true, app: appId, appName: manifest.name, action: 'install', page: manifest.page, result: { summary: `“${manifest.name}”已经安装，可以直接使用。用法见技能 ${skillName(appId)}。` } }
-    }
-    if (exec.subagent) return fail('denied', '子任务不能安装应用。')
-    const entry = (await this.catalog()).find(item => item.app?.id === appId)
-    if (!entry) return fail('unknown_app', `应用目录里没有 ${appId}，或当前用户没有权限安装。`)
-    if (!exec.confirmed) return fail('denied', '安装应用需要用户确认。')
+  /** Ask the plugin center to retry an app whose automatic install failed. */
+  async retry(appId: string): Promise<void> {
     const center = this.options.pluginCenter()
-    if (!center) return fail('install_failed', '当前客户端没有插件中心服务，无法安装应用。请联系管理员。')
-    const active = this.progress.get(appId)
-    if (active && !['done', 'failed'].includes(active.phase)) return fail('install_failed', `“${entry.name}”正在安装中，请稍候。`)
-    this.setProgress(appId, { phase: 'queued', total: entry.artifact?.size })
-    try {
-      await center.install(entry.url)
-      const deadline = Date.now() + (this.options.installTimeoutMs ?? 180_000)
-      let since = 0
-      for (;;) {
-        if (exec.signal.aborted) throw new Error('已取消')
-        const status = center.status(since) ?? {}
-        const row = status.progress?.[entry.packageName]
-        if (row) this.setProgress(appId, { phase: row.phase === 'done' ? 'waiting' : row.phase, received: row.received, total: row.total ?? entry.artifact?.size, message: row.error || row.detail })
-        if (row?.phase === 'failed') throw new Error(row.error || '安装失败')
-        if (row?.phase === 'done') {
-          const notice = (status.notices ?? []).find((item: any) => item.items?.some((it: any) => it.packageName === entry.packageName))
-          const effect: 'none' | 'reload' | 'restart' = notice?.kind === 'restart' ? 'restart' : notice?.kind === 'reload' ? 'reload' : 'none'
-          if (effect !== 'none') {
-            this.setProgress(appId, { phase: 'done', effect })
-            return { ok: true, app: appId, appName: entry.name, action: 'install', result: { summary: effect === 'restart' ? `“${entry.name}”已安装，重启 XBuddy 后可用。` : `“${entry.name}”已安装，刷新界面后可用。` } }
-          }
-          const ready = await this.registry.waitFor(appId, this.options.registrationTimeoutMs ?? 10_000)
-          this.setProgress(appId, { phase: 'done', effect: 'none' })
-          if (!ready) return { ok: true, app: appId, appName: entry.name, action: 'install', result: { summary: `“${entry.name}”已安装，但还没有完成加载。请稍后再试，或刷新界面。` } }
-          const manifest = this.registry.get(appId)!
-          return { ok: true, app: appId, appName: manifest.name, action: 'install', page: manifest.page, result: { summary: `“${manifest.name}”已安装，可以在当前对话继续使用。先加载技能 ${skillName(appId)} 查看用法。` } }
-        }
-        if (Date.now() > deadline) throw new Error('安装超时（3 分钟）')
-        since = Date.now()
-        await new Promise(resolve => setTimeout(resolve, this.options.pollMs ?? 1000))
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      this.setProgress(appId, { phase: 'failed', message })
-      return fail('install_failed', `“${entry.name}”安装失败：${message}。可以到应用中心页面重试。`)
-    }
+    if (!center) throw new Error('当前客户端没有插件中心服务。')
+    const entry = (await this.catalog()).find(item => item.app?.id === appId)
+    if (!entry) throw new Error('应用目录里没有这个应用，或当前用户没有权限。')
+    await center.retry(entry.packageName)
+    this.emit()
+  }
+
+  /** Where the plugin center is with one app that has not registered yet. */
+  private syncState(entry: CatalogEntry): { state: AppState; progress?: InstallProgress } {
+    let status: any
+    try { status = this.options.pluginCenter()?.status() } catch { status = undefined }
+    const row = status?.progress?.[entry.packageName]
+    const plan = (status?.plugins ?? []).find((item: any) => item.packageName === entry.packageName)
+    const notice = (status?.notices ?? []).find((item: any) => (item.kind === 'restart' || item.kind === 'reload') && item.items?.some((it: any) => it.packageName === entry.packageName))
+    if (notice) return { state: 'pending', progress: { phase: 'done', effect: notice.kind } }
+    if (row && ['queued', 'downloading', 'installing', 'applying'].includes(row.phase)) return { state: 'installing', progress: { phase: row.phase, received: row.received, total: row.total ?? entry.artifact?.size, message: row.detail } }
+    if (row?.phase === 'done') return { state: 'installing', progress: { phase: 'waiting' } }
+    if (row?.phase === 'failed' || (plan?.failures ?? 0) > 0) return { state: 'failed', progress: { phase: 'failed', message: row?.error || plan?.lastError || '安装失败' } }
+    return { state: 'preparing' }
   }
 }

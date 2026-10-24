@@ -70,12 +70,12 @@ const OUTPUT_SCHEMA = { type: 'object' }
 export function appCallTool(host: ToolHost) {
   return {
     name: APP_CALL,
-    description: '执行已安装应用的动作，或安装应用（action 为 install）。先加载对应的应用技能（app-<id>）查看动作和参数，再调用。结果先给用户结论；长任务返回任务 ID。',
+    description: '执行应用的动作。先加载对应的应用技能（app-<id>）查看动作和参数，再调用。结果先给用户结论；长任务返回任务 ID。应用由插件中心自动安装和升级，对话中不能安装应用。',
     parameters: {
       type: 'object', additionalProperties: false, required: ['app', 'action'],
       properties: {
         app: { type: 'string', description: '应用 id，即技能名 app-<id> 中的 <id>，例如 mail、bid、contract。' },
-        action: { type: 'string', description: '动作名，见应用技能；安装应用用 install。' },
+        action: { type: 'string', description: '动作名，见应用技能。' },
         args: { type: 'object', description: '动作参数，按应用技能中的说明填写。' },
       },
     },

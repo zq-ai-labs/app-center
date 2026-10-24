@@ -60,7 +60,7 @@ export function registerMail(appCenter, { contract } = {}) {
       if (!mail) throw new Error(`没有编号为 ${item} 的邮件`)
       if (!mail.attachments.length) throw new Error('这封邮件没有附件')
       if (target === 'contract') {
-        if (!contract?.()) throw new Error('合同应用尚未安装，请先安装合同应用')
+        if (!contract?.()) throw new Error('合同应用正在由插件中心自动安装，稍后再试')
         return contract().submit({ file: mail.attachments.find(name => /合同/.test(name)) ?? mail.attachments[0], stance: stance ?? '乙方' }, exec)
       }
       return { summary: `已把“${mail.attachments[0]}”交给标书应用，建立了新项目。`, link: link('bid', 'xbuddy-bid-writer', 'project/new', '打开标书项目') }
