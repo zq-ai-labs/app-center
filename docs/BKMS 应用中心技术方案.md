@@ -6,6 +6,8 @@ Oct 24, 2026 · @sub.maureen
 
 > 修订（2026-10-24，分发方式）：所有插件的安装和升级只由 plugin-center 执行。客户端预装 plugin-center 并附带离线种子（插件 tgz + 初始分发规则），首次安装从种子完成；之后按中心分发规则自动升级和新增，不做按需下载。应用中心和 AI 对话都没有安装能力：去掉 `app_call` 的 install 动作、安装风险级别、“（需安装）”占位技能和页面安装接口；应用中心只读取 plugin-center 的目录和同步状态，失败时请求重试。预装机制分析见《[XBuddy 预装插件机制分析](XBuddy%20预装插件机制分析.md)》。
 
+> 修订（2026-10-25，应用中心只做框架）：应用中心只展示已登记的应用，没有应用时显示空状态；不再读取 plugin-center 的目录和同步状态，去掉重试接口。plugin-center 给应用中心的只读服务和目录回退随之去掉，离线种子保留。
+
 ## 结论与总体架构
 
 新建一个独立插件 `@bkms/app-center`（应用中心），负责面向用户的应用目录、应用登记和 AI 对话集成。所有插件（含应用中心自己）的安装和升级只由现有的 `@bkms/plugin-center` 执行。
@@ -15,7 +17,7 @@ Oct 24, 2026 · @sub.maureen
 - **对话侧**：每个应用登记为一个 DSH 技能（第 0、1 层），只注册 2 个通用工具 `app_call`、`task_status`（第 2 层）。应用再多也不增加常驻工具。
 - **应用侧**：合同、标书、业务邮件各自是 DSH 插件，有自己的页面和后台任务，运行时向应用中心登记动作。
 - **身份**：用户和角色来自已预装的 `@bkms/base`（企业登录），不另建身份体系。
-- **改动量**：plugin-center 加只读服务（目录、状态、重试）和离线种子；XBuddy 预装清单只留 plugin-center，预装逻辑不再卸载移出清单的包；中心服务目录增加可选的 `app` 块，并用 BKMS 令牌鉴权、按角色过滤；业务邮件和标书各需补若干服务方法（见“首批应用”）。
+- **改动量**：plugin-center 加离线种子（已实现）；XBuddy 预装清单只留 plugin-center，预装逻辑不再卸载移出清单的包；中心服务目录增加可选的 `app` 块，并用 BKMS 令牌鉴权、按角色过滤；业务邮件和标书各需补若干服务方法（见“首批应用”）。
 
 ### 总体架构
 
@@ -56,7 +58,6 @@ flowchart TB
   ACReg -- 调动作 handler --> Apps
   Mail -- 服务调用 --> Contract
   Mail -- 服务调用 --> Bid
-  ACPage -- 读目录和同步状态 · 请求重试 --> PC
   Seed -- 首次安装 --> PC
   PC -- 带令牌取目录、规则和新包 --> Center
   PC -- installBundle --> Host
@@ -72,10 +73,10 @@ flowchart TB
 ```
 用户 ──► 应用中心页面 ─────────────┐
 用户 ──► AI 对话（企业模式）        │
-          │ 加载技能 app-<id>       │ 读目录和同步状态、请求重试（不安装）
+          │ 加载技能 app-<id>       │
           │ 调 app_call / task_status
           ▼                         ▼
-   @bkms/app-center ──只读──► @bkms/plugin-center ──installBundle──► DSH 宿主
+   @bkms/app-center（只展示已登记应用）        @bkms/plugin-center ──installBundle──► DSH 宿主
    （登记 · 技能 · 拦截 · 任务索引 · 审计）      │  ▲
           ▲ register        调 handler          │  └─ 离线种子（随客户端：tgz + 初始规则）
           │                     │               │ 带 BKMS 令牌取目录、规则和新包
@@ -89,7 +90,7 @@ flowchart TB
 
 | 组件 | 在架构中的位置 |
 | --- | --- |
-| 应用中心 | 用户和 AI 的入口；业务应用向它登记；只读取 plugin-center 的目录和同步状态，不安装 |
+| 应用中心 | 用户和 AI 的入口；业务应用向它登记；只展示已登记的应用，不连接 plugin-center、不安装 |
 | plugin-center | 唯一的安装者：首次从离线种子安装，之后按分发规则自动升级和新增，失败可重试 |
 | 离线种子 | 随客户端安装包提供的插件 tgz 和初始分发规则，保证断网首次启动也能装好 |
 | 中心服务 | 按用户角色下发目录、分发规则和发布包 |
@@ -97,14 +98,14 @@ flowchart TB
 | 业务应用 | 运行时登记动作；能力以服务形式提供，应用之间直接调用 |
 | `enterprise_invoke_function` | 现有的接口查询通道，与应用中心并存、分工不同 |
 
-AI 和用户都只和应用中心打交道；业务应用向它登记动作。所有插件由 plugin-center 自动装好和升级，应用中心只展示同步状态。
+AI 和用户都只和应用中心打交道；业务应用向它登记动作。所有插件由 plugin-center 自动装好和升级；应用登记后出现在应用中心，插件卸载后消失。
 
 ## 组件与职责
 
 | 组件 | 新建 / 改造 | 做什么 | 不做什么 |
 | --- | --- | --- | --- |
-| `@bkms/app-center` 应用中心插件 | 新建 | 应用登记服务；应用技能生成；2 个对话工具；风险拦截；任务索引；应用中心页面（含同步状态）；结果卡片渲染；审计记录 | 下载、校验、安装、升级任何插件；分发规则 |
-| `@bkms/plugin-center` 插件中心 | 改造（0.3.0） | 唯一安装者：离线种子首装、下载、SHA256 校验、串行安装、自动升级、失败重试、刷新 / 重启提示；只读服务 `bkmsPluginCenter`（目录、状态、重试）；请求目录时带 BKMS 令牌 | 业务分类、AI 相关功能；对外提供安装接口 |
+| `@bkms/app-center` 应用中心插件 | 新建 | 应用登记服务；应用技能生成；2 个对话工具；风险拦截；任务索引；应用中心页面（只展示已登记应用）；结果卡片渲染；审计记录 | 下载、校验、安装、升级任何插件；读取插件中心的目录或进度 |
+| `@bkms/plugin-center` 插件中心 | 改造（0.3.0） | 唯一安装者：离线种子首装、下载、SHA256 校验、串行安装、自动升级、失败重试、刷新 / 重启提示；请求目录时带 BKMS 令牌 | 业务分类、AI 相关功能；对外提供安装接口 |
 | XBuddy 桌面端 | 小改 | 预装清单只保留 plugin-center；预装逻辑不再卸载移出清单的包（交给 plugin-center 接管）；打包时把离线种子放进安装包 | 安装业务插件 |
 | `dsh-plugin-center` 中心服务 | 改造（0.6.0） | 发布包和目录；目录增加 `app` 块；校验 BKMS 令牌并按角色返回目录和分发规则 | 客户端运行时逻辑 |
 | `@bkms/base` | 不改 | 企业登录；`bkmsApi.auth.user`（tenantCode、userId）、`getAccessToken()`；客户端 `bkmsAuthUi.getRoleIds()` | — |
@@ -167,7 +168,7 @@ interface ActionResult {
 
 | 工具 | 参数 | 行为 |
 | --- | --- | --- |
-| `app_call` | `app`, `action`, `args` | 按清单校验参数后调用应用的 handler；校验失败返回正确的参数说明和示例。目标应用还没装好时返回 plugin-center 的同步状态（正在安装 / 等待安装 / 需刷新或重启 / 安装失败请到应用中心重试），没有安装动作 |
+| `app_call` | `app`, `action`, `args` | 按清单校验参数后调用应用的 handler；校验失败返回正确的参数说明和示例。目标应用未登记时返回“没有这个应用（可能还没有安装）或没有权限”，没有安装动作 |
 | `task_status` | `task_id` | 返回任何应用长任务的状态、结论摘要和链接 |
 
 常驻白名单：高频动作（首批只有 `mail.search`）可以由应用中心额外注册成独立工具 `mail_search`，总数不超过 5 个，由应用中心配置控制，应用不能自己加。
@@ -199,17 +200,15 @@ interface ActionResult {
 
 - 左侧入口 **应用中心**：沿用 `@bkms/ui-skills` 工具集市的布局、尺寸和 DSH 设计变量（标题与搜索固定、分类标签换行、卡片区独立滚动、三列卡片），标题“企业应用中心 · 管理中心”。
 - 卡片：圆形字标图标、名称、分类标签、一句话描述、“N 万人聊过”；整张卡片是唯一的操作入口，没有安装、打开、详情按钮。
-- 点击即使用：已安装 → 打开应用页面（`layout.selectPanel(page)`），没有页面的应用新开对话并提示 `/app-<id>`；还没装好的应用，卡片显示 plugin-center 的同步状态：等待安装、安装中（进度）、已安装需刷新 / 重启、安装失败；点击安装中的应用，装好登记后自动打开；点击失败的应用，请 plugin-center 重试。页面本身不安装。
+- 只展示已登记的应用：插件装好启动后登记即出现，卸载后消失；一个都没有时显示空状态，分类标签隐藏、搜索框禁用。点击卡片：有页面的打开应用页面（`layout.selectPanel(page)`），没有页面的新开对话并提示 `/app-<id>`。卡片上的使用次数为本机统计。
 - 应用入口：应用中心客户端提供存在服务 `bkmsAppCenter`（`{ version: 1, panel }`）。应用客户端用 `ctx.inject(['bkmsAppCenter'], …)` 监听：存在时撤下自己的 `sidebar.panellist` 入口，只保留 `main` 页面供应用中心打开；应用中心卸载时自动恢复入口。没装应用中心时，应用照常显示自己的入口。
-- 状态来源：中心目录里有、但还没登记的应用，按 `bkmsPluginCenter.status()` 的 `progress`、`notices`、`plugins`（失败次数和原因）推出状态。
 - 不兼容当前客户端的插件不会被下发（plugin-center 不推送，DSH 也拒绝加载）。
 - 后端接口（`/api/bkms-app-center/*`，POST 只接 JSON，沿用 plugin-center 的防跨站做法）：
 
 | 接口 | 用途 |
 | --- | --- |
-| GET /apps | 已登记应用 + 中心目录中尚未装好的应用及其同步状态 |
+| GET /apps | 已登记的应用 |
 | GET /apps/:id | 单个应用信息与生成的技能（供调试；未登记的应用没有技能） |
-| POST /apps/:id/retry | 请 plugin-center 重试安装失败的应用 |
 | GET /tasks?app=&status= | 任务列表 |
 | GET /activity | 对话调用审计记录 |
 
@@ -219,7 +218,7 @@ interface ActionResult {
 
 ### 中心目录条目（plugins.json）
 
-在现有字段（`name` / `packageName` / `url` / `description` / `version` / `artifact`）上增加可选的 `app` 块。没有 `app` 的条目是普通插件，不进应用中心。
+在现有字段（`name` / `packageName` / `url` / `description` / `version` / `artifact`）上增加可选的 `app` 块，供中心服务按角色下发和管理后台展示。应用中心本身不读中心目录：应用的名称、分类、图标、一句话描述都来自它运行时登记的清单。
 
 ```json
 {
@@ -309,13 +308,13 @@ interface TaskRecord {
 1. 客户端安装包预装 plugin-center，并附带离线种子目录：各插件 tgz 与一份初始 `distribution-v2.json`（规则均为 `installMode: required`、`autoUpgrade: true`）。
 2. plugin-center 启动时把种子 tgz 按 SHA256 放进自己的缓存（`<home>/bkms-plugin-center/packages/<sha256>.tgz`）；中心不可达且没有缓存规则时使用种子规则。
 3. 按规则逐个安装：`prepareArtifact` 命中缓存，不需要联网；装好的应用热加载并向应用中心登记，技能随即出现在对话的技能目录里。
-4. 在此期间，应用中心页面显示“等待安装 / 安装中”；用户在对话里要用还没装好的应用时，`app_call` 返回“正在由插件中心安装，稍后可用”。
+4. 在此期间，应用中心只显示已登记的应用；用户在对话里要用还没装好的应用时，`app_call` 返回“没有这个应用（可能还没有安装）”。
 5. 需要刷新或重启的插件由 plugin-center 统一提示；安装失败的记录原因并按退避重试，用户也可以在应用中心点击该应用立即重试。
 
 ### 对话中用到尚未装好的应用
 
 1. 用户：“把这份合同审一下，我们是乙方”，合同应用还在安装。
-2. 技能目录里没有 `app-contract`；AI 若仍调用 `app_call('contract', …)`，得到 `not_installed`，文字为 plugin-center 当前的同步状态。
+2. 技能目录里没有 `app-contract`；AI 若仍调用 `app_call('contract', …)`，得到 `unknown_app`：没有这个应用（可能还没有安装）或没有权限。
 3. AI 告诉用户稍后再试，或提示到应用中心查看；合同应用登记后，同一对话下一轮即可使用。
 
 ### 长任务
@@ -342,27 +341,16 @@ interface TaskRecord {
 
 ## plugin-center 改动（0.2.0 → 0.3.0）
 
-plugin-center 是唯一的安装者，对外只提供只读服务；新增离线种子。
+plugin-center 是唯一的安装者；新增离线种子。应用中心不连接 plugin-center，因此不再提供给其他插件的服务（之前的只读服务 bkmsPluginCenter 已去掉）。
 
-1. **只读服务 `bkmsPluginCenter`**（已实现）：其他插件只能读目录、读同步状态、请求重试，不能安装。
+1. **离线种子**（已实现）：配置项 `seed`（或环境变量 `BKMS_PLUGIN_CENTER_SEED`）指向随客户端安装包提供的目录（`<seed>/distribution-v2.json` 与 `<seed>/packages/*.tgz`）。启动时把种子包按 SHA256 复制进缓存；中心读不到时依次用上次读到的中心规则、种子规则继续安装；种子与中心同版本时不重复下载。
+2. **自身升级**：plugin-center 不在自己的分发规则里，只随客户端大版本升级（它由 XBuddy 预装，自升级需要重启，且会被预装同步覆盖）。
+3. **目录里的 `app` 块**：应用中心不再读取中心目录，`app` 块只用于中心服务按角色下发和管理后台展示，客户端不需要处理。
+4. **按用户请求目录**：请求 `plugins.json` 和 `distribution-v2.json` 时带上 `@bkms/base` 的登录令牌（`bkmsApi.getAccessToken()`），让服务端按角色过滤。plugin-center 需增加对 `bkmsApi` 的可选注入。
+5. **入口分工**：普通用户的 Profile 预置里关闭“在侧栏显示入口”（已有设置），只留管理员可见。企业用户的 Profile 同时去掉 `dshmarket`。用户只看“应用中心”一个入口；插件页“添加插件”只给管理员。
+6. **测试**：`test/seed.test.mjs`（断网首装不下载、在线升级走 HTTP 下载、中心断开后用缓存规则且不降级、旧种子不改动已装新版）；`app` 字段透传和带令牌请求待补。
 
-```ts
-interface BkmsPluginCenter {
-  version: 1
-  catalog(): Promise<{ center: string; plugins: CatalogEntry[] }>   // readCatalog
-  status(since?: number): SyncStatus                                 // sync.status：progress、notices、plugins（失败次数与原因）
-  retry(packageName: string): Promise<SyncStatus>                    // sync.retry：清除失败记录并立即检查
-}
-```
-
-2. **离线种子**（待实现）：配置项 `seed` 指向随客户端安装包提供的目录（`<seed>/distribution-v2.json` 与 `<seed>/packages/*.tgz`）。启动时把种子包按 SHA256 复制进缓存；中心不可达且没有缓存规则时使用种子规则；中心规则可用后以中心为准。种子与中心同版本时不重复下载。
-3. **自身升级**：plugin-center 不在自己的分发规则里，只随客户端大版本升级（它由 XBuddy 预装，自升级需要重启，且会被预装同步覆盖）。
-4. **目录透传 `app` 块**：`readCatalog` 已经原样返回条目，只需确认不过滤未知字段；BKMS 插件页可以忽略它。
-5. **按用户请求目录**：请求 `plugins.json` 和 `distribution-v2.json` 时带上 `@bkms/base` 的登录令牌（`bkmsApi.getAccessToken()`），让服务端按角色过滤。plugin-center 需增加对 `bkmsApi` 的可选注入。
-6. **入口分工**：普通用户的 Profile 预置里关闭“在侧栏显示入口”（已有设置），只留管理员可见。企业用户的 Profile 同时去掉 `dshmarket`。用户只看“应用中心”一个入口；插件页“添加插件”只给管理员。
-7. **测试**：服务方法（已有 `test/provide.test.mjs`）、离线种子断网首装、种子与中心版本相同时不下载、`app` 字段透传和带令牌请求。
-
-现有能力直接复用，应用中心不再实现：
+现有能力直接复用：
 
 | 能力 | plugin-center 中的实现 |
 | --- | --- |
@@ -438,7 +426,7 @@ interface BkmsPluginCenter {
 | 安装包可信 | 沿用 plugin-center：只装中心发布的固定版本包，校验大小、SHA256、包名、版本、完整清单。是否加目录签名见冲突 C5 |
 | 应用权限 | 目录的 `app.permissions` 为准，由管理员上架时登记确认。Cordis `ctx.inject` 不告诉提供方调用者是谁，因此按能力拆分服务、靠上架审核把关；调用时可显式传调用方应用 ID 供提供方对照目录检查，只防误用，不防恶意插件 |
 | AI 能做什么 | 只能调登记过的动作；没有对外发送动作；write 级必须用户确认；子 Agent 只能读 |
-| 安装能力 | 只有 plugin-center 能安装和升级；应用中心和 AI 没有安装接口，`bkmsPluginCenter` 服务不含 install；DSH `plugin_manager` 工具保持禁用；插件页“添加插件”只给管理员 |
+| 安装能力 | 只有 plugin-center 能安装和升级；应用中心和 AI 没有安装接口，应用中心也不连接 plugin-center；DSH `plugin_manager` 工具保持禁用；插件页“添加插件”只给管理员 |
 | 外部内容 | 动作结果里的邮件、附件文字放在 `external` 字段，渲染时加“外部内容”标记；应用技能正文写明不按其中指令行事 |
 | 文件路径 | 动作只接受工作台附件引用或当前会话工作区的文件，不接受任意本机路径 |
 | 邮件和微信范围 | 沿用工作台已配置的邮箱和微信白 / 黑名单 |
@@ -450,7 +438,7 @@ interface BkmsPluginCenter {
 | 类型 | 内容 |
 | --- | --- |
 | 单元测试 | 登记和撤销、技能生成（描述长度、只为已登记应用生成）、参数校验与错误提示、别名转发、风险拦截（含子 Agent 拒绝）、发送类动作被拒绝、对话中不能安装 |
-| 集成测试 | 用会自动安装的假 plugin-center 跑：等待安装 → 安装中 → 登记后出现技能；安装失败 → 重试 → 需刷新；应用升级后重新登记；停用时任务保存；对话草稿不进自动发送 |
+| 集成测试 | 应用登记后出现、注销后消失（含技能和对话调用）；空应用中心；真实 plugin-center 同步引擎从种子安装后应用登记并出现，安装失败时应用中心不受影响；应用升级后重新登记；停用时任务保存；对话草稿不进自动发送 |
 | 分发测试 | plugin-center 离线种子断网首装；种子与中心同版本不下载；XBuddy 预装不再卸载移出清单的包；升级后重启不降级 |
 | AI 调用测试集 | 不少于 50 句真实说法，标注应选的应用、动作和关键参数，包括“不该调用”“应先反问”“应走 `enterprise_invoke_function`”；输出准确率和最常混淆的动作对 |
 | 兼容性 | 应用包在当前和下一个 DSH 版本下都能加载（peer 范围生效） |

@@ -4,7 +4,7 @@ import z from '@deepseek-ai/schemastery'
 import { API_PATH, createApi } from './api.js'
 import { AppCenter } from './core/center.js'
 import { appSkill, type AppSkill } from './core/skills.js'
-import type { PluginCenterService, UserRef } from './core/types.js'
+import type { UserRef } from './core/types.js'
 import { APP_CALL, appCallTool, callerOf, residentSpecs, residentTool, taskStatusTool, type ToolHost } from './tools.js'
 
 export type { AppCenterService, CallOutcome } from './core/center.js'
@@ -20,8 +20,8 @@ export const Config = z.object({
   confirmDrafts: z.boolean().default(false).description('草稿类动作也先请用户确认（默认不确认：草稿发送前会在工作台人工审核）'),
   resident: z.array(z.string()).default(['mail.search']).description('同时注册为独立工具的只读动作，写成“应用.动作”，最多 5 个'),
   dataDir: z.string().default('').description('数据目录；留空使用 Profile 目录下的 .bkms-app-center'),
-  // Trial mode: register the sample apps from demo/ (labelled 示例, sample data only) and, when no plugin center is
-  // installed, a sample plugin center that installs the rest automatically. demo/ is not in the published package.
+  // Trial mode: register the sample apps from demo/ (labelled 示例, sample data only); the 合同 sample registers a few
+  // seconds later, as an app does when its plugin is installed. demo/ is not in the published package.
   sampleApps: z.boolean().default(false).description('试用模式：加载示例应用（只有示例数据，发布包中不可用）'),
 })
 
@@ -39,14 +39,12 @@ export function apply(ctx: any, config: AppCenterConfig = {}): void {
   const optional = (name: string): any => { try { return ctx.get?.(name) } catch { return undefined } }
   const profile = optional('profileContext')
   const base = profile?.dir || profile?.home || process.env.DSH_HOME?.trim() || join(homedir(), '.dsh')
-  let pluginCenter: PluginCenterService | undefined
   let auth: any
   const log = (level: 'info' | 'warn', message: string) => {
     try { const logger = typeof ctx.logger === 'function' ? ctx.logger('bkms-app-center') : ctx.logger; logger?.[level]?.(message) } catch { /* no logger in this host */ }
   }
   const center = new AppCenter({
     dataDir: config.dataDir || join(base, '.bkms-app-center'),
-    pluginCenter: () => pluginCenter,
     confirmDrafts: () => config.confirmDrafts === true,
     log,
   })
@@ -62,12 +60,6 @@ export function apply(ctx: any, config: AppCenterConfig = {}): void {
   ctx.inject(['bkmsApi'], (child: any) => {
     auth = child.bkmsApi
     child.effect(() => () => { if (auth === child.bkmsApi) auth = undefined }, 'bkms-app-center: login binding')
-  })
-  ctx.inject(['bkmsPluginCenter'], (child: any) => {
-    const service = child.bkmsPluginCenter as PluginCenterService
-    pluginCenter = service
-    void center.catalog(true)
-    child.effect(() => () => { if (pluginCenter === service) pluginCenter = undefined }, 'bkms-app-center: plugin center binding')
   })
 
   // Conversation tools: app_call and task_status always, resident tools while their app is registered.
@@ -96,8 +88,8 @@ export function apply(ctx: any, config: AppCenterConfig = {}): void {
     })
   })
 
-  // Layers 0 and 1: one skill per registered app. The host keeps the catalog in every conversation and loads the body on
-  // demand. Apps the plugin center is still installing get their skill when they register.
+  // Layers 0 and 1: one skill per registered app. The host keeps the skill catalog in every conversation and loads the
+  // body on demand; an app gets its skill when its plugin registers and loses it when the plugin goes away.
   ctx.inject(['skills'], (child: any) => {
     const registered = new Map<string, { key: string; dispose: () => void }>()
     const sync = () => {
@@ -116,19 +108,18 @@ export function apply(ctx: any, config: AppCenterConfig = {}): void {
     child.effect(() => { sync(); const stop = center.onChange(sync); return () => { stop(); for (const item of registered.values()) item.dispose(); registered.clear() } }, 'bkms-app-center: app skills')
   })
 
-  if (config.sampleApps) void loadSamples(center, () => pluginCenter, service => { pluginCenter ??= service; void center.catalog(true) }, log)
+  if (config.sampleApps) void loadSamples(center, log)
 
   ctx.inject(['connection'], (child: any) => {
-    const handle = createApi({ center, user, hasPluginCenter: () => pluginCenter !== undefined })
+    const handle = createApi({ center, user })
     child.effect(() => child.connection.fetch.register({ path: API_PATH, methods: ['POST'], requestBody: 'buffered', fetch: handle }), 'bkms-app-center: page api')
   })
 }
 
 /** Trial mode (see `Config.sampleApps`): sample apps with sample data, every name and result marked as such. */
-async function loadSamples(center: AppCenter, current: () => PluginCenterService | undefined, useCenter: (service: PluginCenterService) => void, log: (level: 'info' | 'warn', message: string) => void): Promise<void> {
+async function loadSamples(center: AppCenter, log: (level: 'info' | 'warn', message: string) => void): Promise<void> {
   try {
     const apps: any = await import(new URL('../demo/apps.mjs', import.meta.url).href)
-    const fake: any = await import(new URL('../demo/fake-host.mjs', import.meta.url).href)
     const service = center.service()
     const sample = {
       ...service,
@@ -144,11 +135,7 @@ async function loadSamples(center: AppCenter, current: () => PluginCenterService
     let contract: any
     apps.registerMail(sample, { contract: () => contract })
     apps.registerBid(sample)
-    if (!current()) {
-      const catalog = apps.demoCatalog.map((entry: any) => ({ ...entry, name: `${entry.name}（示例）`, app: { ...entry.app, summary: `${entry.app.summary}（示例）` } }))
-      // Like the real plugin center: apps not yet installed install by themselves shortly after start.
-      useCenter(fake.createFakePluginCenter({ entries: catalog, autoInstall: ['contract', 'expense'], startDelayMs: 3000, stepMs: 700, onInstalled: (entry: any) => { if (entry.app.id === 'contract') contract = apps.registerContract(sample) } }))
-    }
+    setTimeout(() => { contract = apps.registerContract(sample) }, 3000)
     log('info', 'app-center: sample apps registered (trial mode)')
   } catch (error) {
     log('warn', `app-center: sample apps unavailable: ${error instanceof Error ? error.message : error}`)

@@ -102,34 +102,7 @@ export interface TaskRecord {
   updatedAt: number
 }
 
-/** The `app` block of a central catalog entry (plugins.json). */
-export interface CatalogAppBlock {
-  id: string
-  category: string
-  summary: string
-  icon?: string
-  permissions?: string[]
-  roles?: string[]
-  minAppCenter?: string
-  changelog?: string
-}
-
-/** One central catalog entry as returned by the plugin center. */
-export interface CatalogEntry {
-  name: string
-  packageName: string
-  url: string
-  description?: string | { zh?: string; en?: string }
-  version?: string
-  artifact?: { size?: number; version?: string; restart?: { mode?: string }; manifest?: { peerDependencies?: Record<string, string> } }
-  app?: CatalogAppBlock
-  usage?: number
-}
-
-/** installed: registered and usable; the rest describe the plugin center's automatic install before the app registers. */
-export type AppState = 'installed' | 'preparing' | 'installing' | 'failed' | 'pending'
-
-/** What the page and the skill catalog show for one app. */
+/** What the page shows for one registered app. */
 export interface AppView {
   id: string
   name: string
@@ -137,32 +110,9 @@ export interface AppView {
   summary: string
   description?: string
   icon?: string
-  state: AppState
   version?: string
-  latestVersion?: string
-  size?: number
-  permissions: string[]
-  restart?: string
-  changelog?: string
-  usage?: number
   page?: string
-  packageName?: string
+  /** Successful conversation calls on this machine. */
+  usage: number
   actions: { name: string; description: string; risk: Risk; long: boolean }[]
-  progress?: InstallProgress
-}
-
-export interface InstallProgress {
-  phase: 'queued' | 'downloading' | 'installing' | 'applying' | 'waiting' | 'done' | 'failed'
-  received?: number
-  total?: number
-  message?: string
-  effect?: 'none' | 'reload' | 'restart'
-}
-
-/** The plugin center service (`bkmsPluginCenter`, plugin-center 0.3.0). Read-only apart from retry: installs and upgrades happen inside the plugin center. */
-export interface PluginCenterService {
-  version: 1
-  catalog(): Promise<{ center: string; plugins: CatalogEntry[] }>
-  status(since?: number): any
-  retry(packageName: string): unknown
 }

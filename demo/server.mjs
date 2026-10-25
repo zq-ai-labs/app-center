@@ -1,13 +1,14 @@
-// Demo server: mounts the real @bkms/app-center (lib/) into a stand-in DSH host with demo apps and a demo
-// plugin center, serves the real app center page, and exposes the tool pipeline to a scripted conversation.
+// Demo server: mounts the real @bkms/app-center (lib/) into a stand-in DSH host, registers demo apps the way their
+// plugins would, serves the real app center page, and exposes the tool pipeline to a scripted conversation.
+// /demo/plugins installs or removes the demo app plugins, so apps can be seen arriving, leaving and the empty state.
 //   node demo/server.mjs [port]
 import { createServer } from 'node:http'
 import { readFile, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { apply } from '../lib/index.js'
-import { createFakeHost, createFakePluginCenter } from './fake-host.mjs'
-import { demoCatalog, registerBid, registerContract, registerMail } from './apps.mjs'
+import { createFakeHost } from './fake-host.mjs'
+import { registerBid, registerContract, registerMail } from './apps.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const port = Number(process.argv[2] || process.env.PORT || 4317)
@@ -15,26 +16,30 @@ const dataDir = join(here, 'data')
 
 let state
 async function boot() {
+  state?.stop?.()
   state?.host.dispose()
   await rm(dataDir, { recursive: true, force: true })
   let contract
   const pending = { approval: undefined }
-  const holder = {}
-  // The plugin center installs apps by itself after start; 报销助手 fails once so the retry path can be tried.
-  const pluginCenter = createFakePluginCenter({
-    entries: demoCatalog, autoInstall: ['contract', 'expense'], failOnce: ['expense'], startDelayMs: 6000, stepMs: 700,
-    onInstalled: entry => { if (entry.app.id === 'contract') contract = registerContract(holder.appCenter) },
-  })
   const host = createFakeHost({
-    services: { bkmsPluginCenter: pluginCenter },
     // The demo page answers approval requests: a call without a decision stops and reports what it would ask.
     approve: async reason => { if (pending.approval === undefined) { pending.asked = reason; return false } return pending.approval },
   })
   apply(host.ctx, { dataDir })
-  holder.appCenter = host.provided.get('appCenter')
-  registerMail(holder.appCenter, { contract: () => contract })
-  registerBid(holder.appCenter)
-  state = { host, pending }
+  const appCenter = host.provided.get('appCenter')
+  // Each demo "plugin" registers its app while installed; removing it withdraws the registration.
+  const plugins = {
+    mail: () => registerMail(appCenter, { contract: () => contract }),
+    bid: () => registerBid(appCenter),
+    contract: () => { contract = registerContract(appCenter); return () => { contract.dispose(); contract = undefined } },
+  }
+  const installed = new Map()
+  const install = id => { if (!installed.has(id)) installed.set(id, plugins[id]()) }
+  const remove = id => { installed.get(id)?.(); installed.delete(id) }
+  install('mail'); install('bid')
+  // 合同 arrives a few seconds later, as an app does when its plugin is installed while XBuddy runs.
+  const timer = setTimeout(() => install('contract'), 6000)
+  state = { host, pending, install, remove, installed: () => [...installed.keys()], stop: () => clearTimeout(timer) }
 }
 await boot()
 
@@ -64,6 +69,10 @@ createServer(async (req, res) => {
       return send(res, 200, result)
     }
     if (req.method === 'POST' && url.pathname === '/demo/reset') { await boot(); return send(res, 200, { ok: true }) }
+    if (url.pathname === '/demo/plugins') {
+      if (req.method === 'POST') { const { id, installed } = JSON.parse(await readBody(req) || '{}'); if (['mail', 'bid', 'contract'].includes(id)) (installed ? state.install : state.remove)(id) }
+      return send(res, 200, { installed: state.installed() })
+    }
     send(res, 404, { error: 'not found' })
   } catch (error) {
     send(res, 500, { error: error instanceof Error ? error.message : String(error) })

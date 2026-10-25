@@ -8,8 +8,6 @@ const json = (status: number, body: unknown) => new Response(JSON.stringify(body
 export interface ApiHost {
   center: AppCenter
   user(): UserRef
-  /** Whether the plugin center service is present (it installs and upgrades every app). */
-  hasPluginCenter(): boolean
 }
 
 /** The page's single JSON endpoint: `{ action, ... }` in, `{ ok, value | error }` out. */
@@ -30,22 +28,13 @@ async function dispatch(host: ApiHost, body: any): Promise<unknown> {
   const { center } = host
   const user = host.user()
   switch (body.action) {
-    case 'apps': {
-      const entries = await center.catalog(body.refresh === true)
-      return { apps: center.views(entries), pluginCenter: host.hasPluginCenter(), catalogError: center.catalogError, user: { tenantId: user.tenantId, name: user.name ?? user.userId } }
-    }
+    case 'apps': return { apps: center.views(), user: { tenantId: user.tenantId, name: user.name ?? user.userId } }
     case 'app': {
       const view = center.views().find(item => item.id === body.id)
       if (!view) throw new Error('应用不存在或没有权限。')
       const manifest = center.registry.get(view.id)
-      // The guide the AI loads for this app; apps not installed yet have none.
+      // The guide the AI loads for this app.
       return { app: view, skill: manifest ? appSkill(manifest) : null }
-    }
-    case 'retry': {
-      // Installs are the plugin center's; the page can only ask it to try a failed one again.
-      if (typeof body.id !== 'string') throw new Error('需要应用 id。')
-      await center.retry(body.id)
-      return { retried: true }
     }
     case 'tasks': return { tasks: center.tasks.list(user, { app: typeof body.app === 'string' ? body.app : undefined, status: typeof body.status === 'string' ? body.status as TaskStatus : undefined }) }
     case 'activity': return { activity: center.activity.list(user, 200) }

@@ -37,7 +37,7 @@ const SCENARIOS: Scenario[] = [
     { kind: 'tool', tool: 'app_call', args: { app: 'mail', action: 'draft_reply', args: { item: 103, instructions: '报三年期服务' } } },
     { kind: 'ai', text: '回复草稿已经放进“待我决策”，尚未发送。请在工作台审核后再发出。' },
   ] },
-  { id: 's4', title: '审合同附件（转交合同应用）', note: '合同应用由插件中心在启动后自动安装；还没装好时，结果会说明正在安装。', steps: [
+  { id: 's4', title: '审合同附件（转交合同应用）', note: '合同应用在演示启动几秒后登记（模拟插件装好）；还没登记时，AI 会得知没有这个应用。', steps: [
     { kind: 'user', text: '把王经理那封邮件的合同附件审一下，我们是乙方' },
     { kind: 'skill', name: 'app-contract' },
     { kind: 'tool', tool: 'app_call', args: { app: 'mail', action: 'handoff', args: { item: 102, target: 'contract', stance: '乙方' } } },
@@ -169,6 +169,19 @@ function EntryView({ entry }: { entry: Entry }) {
   </div>
 }
 
+/** Demo only: install or remove the demo app plugins; the app center follows what is registered. */
+function PluginToggles() {
+  const [installed, setInstalled] = useState<string[]>([])
+  const names: [string, string][] = [['mail', '业务邮件'], ['bid', '标书'], ['contract', '合同']]
+  const refresh = async () => setInstalled((await (await fetch('/demo/plugins')).json()).installed)
+  useEffect(() => { void refresh(); const timer = setInterval(() => { void refresh() }, 2000); return () => clearInterval(timer) }, [])
+  const toggle = async (id: string) => { await post('/demo/plugins', { id, installed: !installed.includes(id) }); await refresh() }
+  return <div className="demo-plugins" aria-label="演示插件">
+    <strong>演示：已安装的插件</strong>
+    {names.map(([id, label]) => <label key={id}><input type="checkbox" checked={installed.includes(id)} onChange={() => void toggle(id)} />{label}</label>)}
+  </div>
+}
+
 function Shell() {
   const [view, setView] = useState<'chat' | 'apps'>('apps')
   const [toast, setToast] = useState('')
@@ -185,6 +198,7 @@ function Shell() {
       <button type="button" className={view === 'apps' ? 'on' : ''} onClick={() => setView('apps')} title="应用中心">▦<span>应用中心</span></button>
     </nav>
     <main className="demo-main">{view === 'apps' ? <AppCenterPage /> : <Chat prefill={prefill} onPrefillUsed={() => setPrefill(undefined)} />}</main>
+    {view === 'apps' && <PluginToggles />}
     {toast && <div className="demo-toast" role="status">{toast}</div>}
   </div>
 }

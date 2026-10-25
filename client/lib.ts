@@ -1,15 +1,11 @@
 export type Risk = 'read' | 'draft' | 'write'
-/** installed: usable; the others describe the plugin center's automatic install before the app registers. */
-export type AppState = 'installed' | 'preparing' | 'installing' | 'failed' | 'pending'
-export interface InstallProgress { phase: string; received?: number; total?: number; message?: string; effect?: 'none' | 'reload' | 'restart' }
+/** One registered app, as the app center page shows it. */
 export interface AppView {
   id: string; name: string; category: string; summary: string; description?: string; icon?: string
-  state: AppState; version?: string; latestVersion?: string; size?: number; permissions: string[]; restart?: string
-  changelog?: string; usage?: number; page?: string; packageName?: string
+  version?: string; page?: string; usage: number
   actions: { name: string; description: string; risk: Risk; long: boolean }[]
-  progress?: InstallProgress
 }
-export interface AppsResponse { apps: AppView[]; pluginCenter: boolean; catalogError: string; user: { tenantId: string; name: string } }
+export interface AppsResponse { apps: AppView[]; user: { tenantId: string; name: string } }
 export interface AppLink { app: string; page?: string; route?: string; label?: string }
 export interface TaskRecord { id: string; app: string; action: string; status: string; title: string; summary?: string; link?: AppLink; createdAt: number; updatedAt: number }
 export interface ActivityEntry { at: string; kind: string; origin: string; app: string; action: string; args?: string; result: string; ok: boolean; confirmed: boolean }

@@ -8,8 +8,8 @@ import { validate } from '../lib/core/schema.js'
 import { decideRisk } from '../lib/core/risk.js'
 import { summarizeArgs } from '../lib/core/store.js'
 import { renderOutcome } from '../lib/tools.js'
-import { createFakeHost, createFakePluginCenter } from '../demo/fake-host.mjs'
-import { bidManifest, demoCatalog, mailManifest, registerBid, registerContract, registerMail } from '../demo/apps.mjs'
+import { createFakeHost } from '../demo/fake-host.mjs'
+import { bidManifest, mailManifest, registerBid, registerContract, registerMail } from '../demo/apps.mjs'
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'app-center-'))
 const handlersFor = manifest => Object.fromEntries(manifest.actions.map(action => [action.name, async () => ({ summary: 'ok' })]))
@@ -80,11 +80,22 @@ test('activity log hides bodies and contact details', () => {
   assert.doesNotMatch(text, /wang@|13800138000|正文/)
 })
 
-test('plugin in a host: tools, skills, risk gate and the page API; installs belong to the plugin center', async () => {
+test('an empty app center: no apps, no skills, the two general tools only', async () => {
+  const host = createFakeHost()
+  apply(host.ctx, { dataDir: tmp() })
+  const page = await host.fetchRoute('/api/bkms-app-center', { action: 'apps' })
+  assert.deepEqual(page.value.apps, [])
+  assert.equal(host.skills.size, 0)
+  assert.deepEqual([...host.tools.keys()].sort(), ['app_call', 'task_status'])
+  const call = await host.callTool('app_call', { app: 'contract', action: 'list', args: {} })
+  assert.equal(call.value.code, 'unknown_app')
+  assert.match(call.text, /可能还没有安装/)
+  host.dispose()
+})
+
+test('plugin in a host: apps appear and leave with their plugins; tools, skills, risk gate and the page API', async () => {
   const approvals = []
-  let host
-  const pluginCenter = createFakePluginCenter({ entries: demoCatalog, autoInstall: ['contract', 'expense'], failOnce: ['expense'], startDelayMs: 200, stepMs: 5, onInstalled: entry => { if (entry.app.id === 'contract') registerContract(host.provided.get('appCenter')) } })
-  host = createFakeHost({ approve: async reason => { approvals.push(reason); return true }, services: { bkmsPluginCenter: pluginCenter } })
+  const host = createFakeHost({ approve: async reason => { approvals.push(reason); return true } })
   apply(host.ctx, { dataDir: tmp() })
   const appCenter = host.provided.get('appCenter')
   registerMail(appCenter, { contract: () => undefined })
@@ -92,18 +103,13 @@ test('plugin in a host: tools, skills, risk gate and the page API; installs belo
   appCenter.register({ id: 'notes', name: '纪要', category: '办公', summary: '会议纪要整理', actions: [
     { name: 'start', description: '整理并保存纪要。', whenToUse: ['整理纪要'], examples: ['整理一下纪要'], risk: 'write', confirmText: '保存纪要“{title}”', params: { type: 'object', required: ['title'], properties: { title: { type: 'string' } } } },
   ] }, { start: async ({ title }) => ({ summary: `已保存“${title}”。` }) })
-  await new Promise(r => setTimeout(r, 10))
+  const listed = async () => (await host.fetchRoute('/api/bkms-app-center', { action: 'apps' })).value.apps.map(app => app.id)
 
-  // Two general tools plus the resident mail search; skills only for registered apps, none for apps not installed.
+  // Registered apps only: two general tools plus the resident mail search, one skill per app.
+  assert.deepEqual(await listed(), ['notes', 'mail', 'bid'], 'category, then name')
   assert.deepEqual([...host.tools.keys()].sort(), ['app_call', 'mail_search', 'task_status'])
   assert.match(host.skillCatalog(), /app-mail: 查找邮件往来/)
-  assert.doesNotMatch(host.skillCatalog(), /app-contract|需安装/)
-  // The conversation cannot install: there is no install action, and an app still being installed says so.
-  const install = await host.callTool('app_call', { app: 'contract', action: 'install' })
-  assert.equal(install.value.code, 'not_installed')
-  assert.match(install.text, /插件中心/)
-  const states = async () => Object.fromEntries((await host.fetchRoute('/api/bkms-app-center', { action: 'apps' })).value.apps.map(app => [app.id, app.state]))
-  assert.equal((await states()).contract, 'preparing')
+  assert.doesNotMatch(host.skillCatalog(), /app-contract/)
 
   const search = await host.callTool('mail_search', { query: 'TH-100' })
   assert.equal(search.decision, 'allow'); assert.match(search.text, /找到 2 封/)
@@ -116,23 +122,24 @@ test('plugin in a host: tools, skills, risk gate and the page API; installs belo
   const sub = await host.callTool('app_call', { app: 'bid', action: 'start', args: { file: 'x.pdf' } }, { session: { id: 's2', origin: 'subagent' } })
   assert.equal(sub.decision, 'deny')
 
-  // The plugin center installs 合同 by itself; it registers and gets its skill. 报销助手 fails once.
-  await new Promise(r => setTimeout(r, 500))
+  // A plugin installed later registers: its app, skill and actions appear in the running conversation.
+  const contract = registerContract(appCenter)
+  assert.ok((await listed()).includes('contract'))
   assert.match(host.skills.get('app-contract').content, /### start/)
-  assert.deepEqual(await states(), { bid: 'installed', contract: 'installed', expense: 'failed', mail: 'installed', notes: 'installed' })
   const review = await host.callTool('app_call', { app: 'contract', action: 'start', args: { mode: 'review', file: '采购合同.docx', stance: '乙方' } })
   assert.match(review.text, /任务 ID：ct-/)
   const status = await host.callTool('task_status', { task_id: review.value.result.task.id })
   assert.match(status.text, /进行中/)
-
-  // A failed install is retried through the plugin center; 报销助手 then only needs a refresh.
-  assert.equal((await host.fetchRoute('/api/bkms-app-center', { action: 'retry', id: 'expense' })).ok, true)
-  await new Promise(r => setTimeout(r, 200))
-  assert.equal((await states()).expense, 'pending')
+  // The plugin is removed: the app and its skill leave; its past tasks stay visible.
+  contract.dispose()
+  assert.ok(!(await listed()).includes('contract'))
+  assert.equal(host.skills.has('app-contract'), false)
+  assert.match((await host.callTool('task_status', { task_id: review.value.result.task.id })).text, /合同评审/)
 
   const activity = await host.fetchRoute('/api/bkms-app-center', { action: 'activity' })
   assert.ok(activity.value.activity.some(item => item.kind === 'denied'))
   assert.ok(activity.value.activity.some(item => item.action === 'start' && item.confirmed))
+  assert.equal((await host.fetchRoute('/api/bkms-app-center', { action: 'retry', id: 'contract' })).ok, false, 'no install or retry API in the app center')
   host.dispose()
 })
 

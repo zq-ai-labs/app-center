@@ -49,3 +49,6 @@
 .demo-composer { position: sticky; bottom: -70px; margin-top: auto; display: flex; gap: 8px; padding: 12px 0 0; background: linear-gradient(transparent, #fff 30%); }
 .demo-composer input { flex: 1; min-height: 36px; padding: 6px 12px; border: 1px solid #e5e8ef; border-radius: 8px; font: inherit; }
 @media (max-width: 1100px) { .demo-chat { grid-template-columns: 240px 1fr; } .demo-context { display: none; } }
+.demo-plugins { position: fixed; right: 20px; bottom: 20px; display: grid; gap: 4px; padding: 10px 14px; background: #fff; border: 1px dashed #c9cdd4; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.08); font-size: 12px; color: #4e5969; }
+.demo-plugins strong { font-weight: 500; color: #1f2329; }
+.demo-plugins label { display: flex; align-items: center; gap: 6px; cursor: pointer; }

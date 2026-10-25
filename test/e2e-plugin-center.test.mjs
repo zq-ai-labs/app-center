@@ -1,5 +1,6 @@
-// End to end with the real plugin center sync engine (sibling checkout ../bkms-plugin-center): an offline first start
-// installs an app from the seed, the app registers with the real app center, and failures are retried through it.
+// End to end with the real plugin center sync engine (sibling checkout ../bkms-plugin-center): the plugin center installs
+// an app from its offline seed, the app registers with the real app center and appears; the app center itself never
+// talks to the plugin center.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
@@ -38,7 +39,7 @@ function seedFor(packageName, version) {
   return seed
 }
 
-test('offline first start: the seed installs the app, it registers, the AI can use it; failures retry through app center', { skip: !available && 'needs ../bkms-plugin-center' }, async () => {
+test('the real plugin center installs an app from its seed; the app registers and appears; until then it is simply absent', { skip: !available && 'needs ../bkms-plugin-center' }, async () => {
   const { createSync } = await import(syncModule.href)
   const seed = seedFor('@bkms/app-contract', '1.2.0')
   let host
@@ -57,35 +58,26 @@ test('offline first start: the seed installs the app, it registers, the AI can u
   })
   const offline = async () => { throw new Error('getaddrinfo ENOTFOUND center') }
   const sync = createSync({ manager, home: tmp(), stateDir: tmp(), fetcher: offline, timers: { set: () => 0, clear: () => {} }, seed, preset: { center: 'http://127.0.0.1:9/plugin-center/plugins.json' } })
-  const pluginCenter = { version: 1, catalog: () => sync.catalog(), status: since => sync.status(since), retry: name => sync.retry(name) }
-  host = createFakeHost({ services: { bkmsPluginCenter: pluginCenter } })
+  // The app center knows nothing about the plugin center.
+  host = createFakeHost()
   apply(host.ctx, { dataDir: tmp() })
   registerMail(host.provided.get('appCenter'), { contract: () => undefined })
-  const apps = async () => Object.fromEntries((await host.fetchRoute('/api/bkms-app-center', { action: 'apps', refresh: true })).value.apps.map(app => [app.id, app]))
+  const listed = async () => (await host.fetchRoute('/api/bkms-app-center', { action: 'apps' })).value.apps.map(app => app.id)
 
-  // Before the plugin center runs: the seed catalog shows the app as waiting; the AI is told it is being installed.
-  let view = await apps()
-  assert.equal(view.contract.state, 'preparing')
-  assert.equal(view.contract.category, '法务')
-  const early = await host.callTool('app_call', { app: 'contract', action: 'list', args: {} })
-  assert.equal(early.value.code, 'not_installed')
-  assert.match(early.text, /插件中心/)
+  assert.deepEqual(await listed(), ['mail'])
   assert.equal(host.skills.has('app-contract'), false)
+  assert.equal((await host.callTool('app_call', { app: 'contract', action: 'list', args: {} })).value.code, 'unknown_app')
 
-  // First attempt fails (simulated network error): the real sync status marks it failed with the reason.
+  // The first install fails inside the plugin center: nothing changes in the app center.
   await sync.checkNow()
-  view = await apps()
-  assert.equal(view.contract.state, 'failed')
-  assert.match(view.contract.progress.message, /ETIMEDOUT/)
+  assert.equal(sync.status().plugins[0].failures, 1)
+  assert.deepEqual(await listed(), ['mail'])
 
-  // The user clicks the app: app center asks the plugin center to retry; the seed package installs without downloading.
-  assert.equal((await host.fetchRoute('/api/bkms-app-center', { action: 'retry', id: 'contract' })).ok, true)
-  await new Promise(resolve => setTimeout(resolve, 50))
-  view = await apps()
-  assert.equal(view.contract.state, 'installed')
+  // The plugin center retries (its own retry); the seed package installs without downloading, the app registers.
+  await sync.retry('@bkms/app-contract')
+  assert.deepEqual((await listed()).sort(), ['contract', 'mail'])
   assert.match(host.skills.get('app-contract').content, /### start/)
-  const used = await host.callTool('app_call', { app: 'contract', action: 'templates', args: {} })
-  assert.equal(used.value.ok, true)
+  assert.equal((await host.callTool('app_call', { app: 'contract', action: 'templates', args: {} })).value.ok, true)
   assert.equal(sync.status().policySource, 'seed')
   host.dispose()
 })
