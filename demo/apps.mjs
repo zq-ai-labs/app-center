@@ -17,10 +17,10 @@ const BIDS = [
 const link = (app, page, route, label) => ({ app, page, route, label })
 
 export const mailManifest = {
-  id: 'mail', name: '业务邮件', category: '办公', icon: '邮', version: '0.1.7', page: 'bkms-workbench',
+  id: 'mail', name: '邮件助手', category: '办公', icon: '邮', version: '0.1.7', page: 'bkms-workbench',
   summary: '查找邮件往来、待决策事项和回复草稿',
-  description: '工作台里的业务邮件：查找邮件往来、列出待我决策的事项、为来信起草回复（不发送），以及把来信或附件交给合同、标书应用。',
-  notFor: ['发送邮件：对话里不能发送，发送在工作台人工审核后完成', '合同条款的风险判断：用合同应用'],
+  description: '工作台里的邮件：查找邮件往来、列出待我决策的事项、为来信起草回复（不发送），以及把来信或附件交给合同助手、标书助手。',
+  notFor: ['发送邮件：对话里不能发送，发送在工作台人工审核后完成', '合同条款的风险判断：用合同助手'],
   actions: [
     { name: 'search', description: '按关键词、联系人、时间查邮件往来。', whenToUse: ['用户要找某人或某主题的邮件'], examples: ['找一下和启明演示关于 TH-100 的往来'], risk: 'read',
       params: { type: 'object', additionalProperties: false, required: ['query'], properties: { query: { type: 'string', minLength: 1, maxLength: 200, description: '关键词或联系人', examples: ['TH-100'] }, limit: { type: 'integer', minimum: 1, maximum: 20, description: '最多返回几封，默认 10' } } } },
@@ -30,7 +30,7 @@ export const mailManifest = {
       params: { type: 'object', additionalProperties: false, properties: { view: { type: 'string', enum: ['decide', 'done'], description: 'decide 为待我决策，done 为 AI 已代办' } } } },
     { name: 'draft_reply', description: '为一封来信起草回复，放进“待我决策”，不发送。', whenToUse: ['用户要给某封来信写回复'], notFor: ['用户要求直接发送：告诉用户需要在工作台审核后发送'], examples: ['给这封询价起个回复'], risk: 'draft',
       params: { type: 'object', additionalProperties: false, required: ['item'], properties: { item: { type: 'integer', minimum: 1, description: '邮件编号', examples: [103] }, instructions: { type: 'string', maxLength: 500, description: '用户对回复的要求' } } } },
-    { name: 'handoff', description: '把来信或附件交给合同、标书应用。', whenToUse: ['用户要审邮件里的合同附件，或按邮件里的招标文件做标书'], examples: ['把这封邮件的合同附件审一下，我们是乙方'], risk: 'draft',
+    { name: 'handoff', description: '把来信或附件交给合同助手、标书助手。', whenToUse: ['用户要审邮件里的合同附件，或按邮件里的招标文件做标书'], examples: ['把这封邮件的合同附件审一下，我们是乙方'], risk: 'draft',
       params: { type: 'object', additionalProperties: false, required: ['item', 'target'], properties: { item: { type: 'integer', minimum: 1, description: '邮件编号', examples: [102] }, target: { type: 'string', enum: ['contract', 'bid'], description: '交给哪个应用' }, stance: { type: 'string', enum: ['甲方', '乙方'], description: '合同评审时我方立场' } } } },
   ],
 }
@@ -60,20 +60,20 @@ export function registerMail(appCenter, { contract } = {}) {
       if (!mail) throw new Error(`没有编号为 ${item} 的邮件`)
       if (!mail.attachments.length) throw new Error('这封邮件没有附件')
       if (target === 'contract') {
-        if (!contract?.()) throw new Error('合同应用正在由插件中心自动安装，稍后再试')
+        if (!contract?.()) throw new Error('合同助手正在由插件中心自动安装，稍后再试')
         return contract().submit({ file: mail.attachments.find(name => /合同/.test(name)) ?? mail.attachments[0], stance: stance ?? '乙方' }, exec)
       }
-      return { summary: `已把“${mail.attachments[0]}”交给标书应用，建立了新项目。`, link: link('bid', 'xbuddy-bid-writer', 'project/new', '打开标书项目') }
+      return { summary: `已把“${mail.attachments[0]}”交给标书助手，建立了新项目。`, link: link('bid', 'xbuddy-bid-writer', 'project/new', '打开标书项目') }
     },
   })
 }
 
 export const bidManifest = {
-  id: 'bid', name: '标书', category: '投标', icon: '标', version: '0.1.0-dev.1', page: 'xbuddy-bid-writer',
+  id: 'bid', name: '标书助手', category: '投标', icon: '标', version: '0.1.0-dev.1', page: 'xbuddy-bid-writer',
   summary: '解析招标文件、编写标书、检查响应',
   description: '标书编写：解析招标文件，提取资格要求、评分项和废标项，生成大纲和正文，检查对招标要求的响应。',
   askFirst: ['新建项目时：招标文件在哪（邮件附件或本地文件）'],
-  notFor: ['合同条款评审：用合同应用', '报价金额：标书应用不生成报价'],
+  notFor: ['合同条款评审：用合同助手', '报价金额：标书助手不生成报价'],
   actions: [
     { name: 'start', description: '传入招标文件，建立标书项目并开始解析。', whenToUse: ['用户要按招标文件开始做标书'], examples: ['按这份招标文件开始做标书'], risk: 'draft', long: true,
       params: { type: 'object', additionalProperties: false, required: ['file'], properties: { file: { type: 'string', minLength: 1, description: '招标文件：工作台附件引用或会话工作区文件', examples: ['招标文件.pdf'] } } } },
@@ -94,7 +94,7 @@ export function registerBid(appCenter) {
       const id = `bid-${Date.now().toString(36)}`
       const now = Date.now()
       appCenter.tasks.report({ id, app: 'bid', action: 'start', status: 'running', title: `解析招标文件：${file}`, conversationId: exec.sessionId, tenantId: exec.user.tenantId, userId: exec.user.userId, createdAt: now, updatedAt: now, link: link('bid', 'xbuddy-bid-writer', `project/${id}`) })
-      setTimeout(() => appCenter.tasks.report({ id, app: 'bid', action: 'start', status: 'needs-review', title: `解析招标文件：${file}`, summary: '解析完成：资格要求 9 项、评分项 23 项、废标项 6 项，请在标书应用中确认。', tenantId: exec.user.tenantId, userId: exec.user.userId, createdAt: now, updatedAt: Date.now(), link: link('bid', 'xbuddy-bid-writer', `project/${id}`) }), 4000)
+      setTimeout(() => appCenter.tasks.report({ id, app: 'bid', action: 'start', status: 'needs-review', title: `解析招标文件：${file}`, summary: '解析完成：资格要求 9 项、评分项 23 项、废标项 6 项，请在标书助手中确认。', tenantId: exec.user.tenantId, userId: exec.user.userId, createdAt: now, updatedAt: Date.now(), link: link('bid', 'xbuddy-bid-writer', `project/${id}`) }), 4000)
       return { summary: `已建立标书项目并开始解析“${file}”。`, task: { id, etaMinutes: 3 }, link: link('bid', 'xbuddy-bid-writer', `project/${id}`, '打开项目') }
     },
     async list() { return { summary: `你有 ${BIDS.length} 个标书项目。`, items: BIDS.map(b => ({ title: b.name, detail: `${b.stage}，${b.progress}，截止 ${b.deadline}`, link: link('bid', 'xbuddy-bid-writer', `project/${b.id}`) })) } },
@@ -105,11 +105,11 @@ export function registerBid(appCenter) {
 }
 
 export const contractManifest = {
-  id: 'contract', name: '合同', category: '法务', icon: '审', version: '1.2.0', page: 'bkms-app-contract',
+  id: 'contract', name: '合同助手', category: '法务', icon: '审', version: '1.2.0', page: 'bkms-app-contract',
   summary: '合同风险评审、按模板起草',
   description: '合同评审与起草：识别合同风险条款并给出修改建议，或按模板起草合同。',
   askFirst: ['评审前：我方是甲方还是乙方'],
-  notFor: ['标书编写：用标书应用'],
+  notFor: ['标书编写：用标书助手'],
   actions: [
     { name: 'start', description: '发起合同评审或起草。', whenToUse: ['用户要审一份合同或按模板起草'], examples: ['把这份合同审一下，我们是乙方'], risk: 'draft', long: true,
       params: { type: 'object', additionalProperties: false, required: ['mode', 'file'], properties: { mode: { type: 'string', enum: ['review', 'draft'], description: 'review 评审，draft 起草' }, file: { type: 'string', minLength: 1, description: '合同文件或模板名', examples: ['采购合同.docx'] }, stance: { type: 'string', enum: ['甲方', '乙方'], description: '我方立场（评审时必填）' } } } },
@@ -126,7 +126,7 @@ export function registerContract(appCenter) {
     appCenter.tasks.report({ ...base, status: 'running', updatedAt: now })
     reviews.push({ id, file, stance })
     setTimeout(() => appCenter.tasks.report({ ...base, status: 'done', updatedAt: Date.now(), summary: '发现 3 处高风险：违约金比例偏高（20%）、验收标准未量化、管辖法院在对方所在地。' }), 5000)
-    return { summary: `已开始评审“${file}”（我方${stance}）。`, task: { id, etaMinutes: 3 }, link: link('contract', 'bkms-app-contract', `review/${id}`, '在合同应用中打开') }
+    return { summary: `已开始评审“${file}”（我方${stance}）。`, task: { id, etaMinutes: 3 }, link: link('contract', 'bkms-app-contract', `review/${id}`, '在合同助手中打开') }
   }
   const dispose = appCenter.register(contractManifest, {
     async start({ mode, file, stance }, exec) {

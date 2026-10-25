@@ -37,11 +37,11 @@ const SCENARIOS: Scenario[] = [
     { kind: 'tool', tool: 'app_call', args: { app: 'mail', action: 'draft_reply', args: { item: 103, instructions: '报三年期服务' } } },
     { kind: 'ai', text: '回复草稿已经放进“待我决策”，尚未发送。请在工作台审核后再发出。' },
   ] },
-  { id: 's4', title: '审合同附件（转交合同应用）', note: '合同应用在演示启动几秒后登记（模拟插件装好）；还没登记时，AI 会得知没有这个应用。', steps: [
+  { id: 's4', title: '审合同附件（转交合同助手）', note: '合同助手在演示启动几秒后登记（模拟插件装好）；还没登记时，AI 会得知没有这个应用。', steps: [
     { kind: 'user', text: '把王经理那封邮件的合同附件审一下，我们是乙方' },
     { kind: 'skill', name: 'app-contract' },
     { kind: 'tool', tool: 'app_call', args: { app: 'mail', action: 'handoff', args: { item: 102, target: 'contract', stance: '乙方' } } },
-    { kind: 'ai', text: '已经把“TH-100采购合同（草稿）.docx”交给合同应用评审，我方立场为乙方，大约 3 分钟出结果。' },
+    { kind: 'ai', text: '已经把“TH-100采购合同（草稿）.docx”交给合同助手评审，我方立场为乙方，大约 3 分钟出结果。' },
   ] },
   { id: 's5', title: '按招标文件开始做标书（长任务）', steps: [
     { kind: 'user', text: '按这份招标文件开始做标书' },
@@ -172,7 +172,7 @@ function EntryView({ entry }: { entry: Entry }) {
 /** Demo only: install or remove the demo app plugins; the app center follows what is registered. */
 function PluginToggles() {
   const [installed, setInstalled] = useState<string[]>([])
-  const names: [string, string][] = [['mail', '业务邮件'], ['bid', '标书'], ['contract', '合同']]
+  const names: [string, string][] = [['mail', '邮件助手'], ['bid', '标书助手'], ['contract', '合同助手']]
   const refresh = async () => setInstalled((await (await fetch('/demo/plugins')).json()).installed)
   useEffect(() => { void refresh(); const timer = setInterval(() => { void refresh() }, 2000); return () => clearInterval(timer) }, [])
   const toggle = async (id: string) => { await post('/demo/plugins', { id, installed: !installed.includes(id) }); await refresh() }

@@ -15,9 +15,9 @@ Oct 24, 2026 · @sub.maureen
 - **不合并的原因**：plugin-center 是分发底座，管所有插件、要稳定，升级自己总要重启；应用中心跟着业务频繁改动，而且会被 AI 调用。分开后，安装能力只留在 plugin-center 内部，应用中心和 AI 都碰不到。DSH 自带的 `plugin_manager` 工具在桌面版主对话中已禁用，需保持禁用。
 - **分发**：客户端预装 plugin-center 并附带离线种子；plugin-center 首次启动从种子安装应用中心、业务应用和其他 BKMS 插件，之后按中心分发规则自动升级和新增。
 - **对话侧**：每个应用登记为一个 DSH 技能（第 0、1 层），只注册 2 个通用工具 `app_call`、`task_status`（第 2 层）。应用再多也不增加常驻工具。
-- **应用侧**：合同、标书、业务邮件各自是 DSH 插件，有自己的页面和后台任务，运行时向应用中心登记动作。
+- **应用侧**：合同助手、标书助手、邮件助手各自是 DSH 插件，有自己的页面和后台任务，运行时向应用中心登记动作。
 - **身份**：用户和角色来自已预装的 `@bkms/base`（企业登录），不另建身份体系。
-- **改动量**：plugin-center 加离线种子（已实现）；XBuddy 预装清单只留 plugin-center，预装逻辑不再卸载移出清单的包；中心服务目录增加可选的 `app` 块，并用 BKMS 令牌鉴权、按角色过滤；业务邮件和标书各需补若干服务方法（见“首批应用”）。
+- **改动量**：plugin-center 加离线种子（已实现）；XBuddy 预装清单只留 plugin-center，预装逻辑不再卸载移出清单的包；中心服务目录增加可选的 `app` 块，并用 BKMS 令牌鉴权、按角色过滤；邮件助手和标书各需补若干服务方法（见“首批应用”）。
 
 ### 总体架构
 
@@ -33,7 +33,7 @@ flowchart TB
       ACReg["登记服务 appCenter<br/>任务索引 · 审计"]
     end
     subgraph Apps["业务应用插件"]
-      Mail["业务邮件<br/>bkms-workbench"]
+      Mail["邮件助手<br/>bkms-workbench"]
       Contract["合同<br/>@bkms/app-contract"]
       Bid["标书<br/>xbuddy-bid-writer"]
     end
@@ -80,7 +80,7 @@ flowchart TB
    （登记 · 技能 · 拦截 · 任务索引 · 审计）      │  ▲
           ▲ register        调 handler          │  └─ 离线种子（随客户端：tgz + 初始规则）
           │                     │               │ 带 BKMS 令牌取目录、规则和新包
-   业务应用：业务邮件 / 合同 / 标书               ▼
+   业务应用：邮件助手 / 合同助手 / 标书助手               ▼
    （由 plugin-center 安装和升级）        dsh-plugin-center 中心服务
                                                    │ 校验令牌、取角色
                                                    ▼
@@ -109,7 +109,7 @@ AI 和用户都只和应用中心打交道；业务应用向它登记动作。�
 | XBuddy 桌面端 | 小改 | 预装清单只保留 plugin-center；预装逻辑不再卸载移出清单的包（交给 plugin-center 接管）；打包时把离线种子放进安装包 | 安装业务插件 |
 | `dsh-plugin-center` 中心服务 | 改造（0.6.0） | 发布包和目录；目录增加 `app` 块；校验 BKMS 令牌并按角色返回目录和分发规则 | 客户端运行时逻辑 |
 | `@bkms/base` | 不改 | 企业登录；`bkmsApi.auth.user`（tenantCode、userId）、`getAccessToken()`；客户端 `bkmsAuthUi.getRoleIds()` | — |
-| 业务应用插件（业务邮件 / 合同 / 标书） | 邮件、标书已有，合同新建 | 自己的页面、服务、后台任务和技能；启动时向应用中心登记清单 | 直接注册对话工具（常驻白名单除外）；自己对外发送 |
+| 业务应用插件（邮件助手 / 合同助手 / 标书助手） | 邮件、标书已有，合同新建 | 自己的页面、服务、后台任务和技能；启动时向应用中心登记清单 | 直接注册对话工具（常驻白名单除外）；自己对外发送 |
 | DSH 宿主 | 不改 | 插件热插拔、`pluginManager`、工具、技能、Agent、审批、页面 | — |
 
 依赖方向：业务应用 → app-center ⇢ plugin-center（只读）→ 中心服务；app-center 和中心服务都依赖 `@bkms/base` 提供身份。业务应用对 app-center 是**可选依赖**：没装应用中心时，应用页面照常可用，只是不进对话。app-center 对 plugin-center 也是可选依赖：缺少时只显示已登记的应用。
@@ -300,8 +300,8 @@ interface TaskRecord {
 3. 用法里的 `askFirst` 要求先确认立场，AI 问用户“我方是甲方还是乙方”。
 4. AI 调 `app_call('mail', 'handoff', { item, target: 'contract', stance })`。
 5. 风险拦截：`draft` 级，按设置放行。
-6. 业务邮件通过合同应用的服务 `contractReview.submit` 提交附件引用，合同应用建立任务并调 `appCenter.tasks.report`。
-7. 对话收到：“已开始评审，约 3 分钟”，并显示在合同应用中打开的卡片。
+6. 邮件助手通过合同助手的服务 `contractReview.submit` 提交附件引用，合同助手建立任务并调 `appCenter.tasks.report`。
+7. 对话收到：“已开始评审，约 3 分钟”，并显示在合同助手中打开的卡片。
 
 ### 首次启动与安装
 
@@ -313,9 +313,9 @@ interface TaskRecord {
 
 ### 对话中用到尚未装好的应用
 
-1. 用户：“把这份合同审一下，我们是乙方”，合同应用还在安装。
+1. 用户：“把这份合同审一下，我们是乙方”，合同助手还在安装。
 2. 技能目录里没有 `app-contract`；AI 若仍调用 `app_call('contract', …)`，得到 `unknown_app`：没有这个应用（可能还没有安装）或没有权限。
-3. AI 告诉用户稍后再试，或提示到应用中心查看；合同应用登记后，同一对话下一轮即可使用。
+3. AI 告诉用户稍后再试，或提示到应用中心查看；合同助手登记后，同一对话下一轮即可使用。
 
 ### 长任务
 
@@ -389,7 +389,7 @@ plugin-center 是唯一的安装者；新增离线种子。应用中心不连接
 - [ ] 优先使用 start / list / get / status 四个统一动作，专有动作不超过 3 个。
 - [ ] 每个动作都写：做什么、什么时候用（用户原话示例）、什么时候不用和该用谁、参数（能枚举就枚举）、风险级别。
 - [ ] 参数名在各应用间一致（`since`、`query`、`file`、`item`）。
-- [ ] 不提供任何对外发送动作；要发的内容交给业务邮件的“待我决策”，并带“来自对话”标记。
+- [ ] 不提供任何对外发送动作；要发的内容交给邮件助手的“待我决策”，并带“来自对话”标记。
 - [ ] 长任务在应用后台执行（隔离 Agent 或任务队列）；技能只注册在应用自己的后台 Agent 里，不进主对话。
 - [ ] 任务状态变化时调 `tasks.report`；停用时保存进行中的任务。
 - [ ] 新版能读旧数据，迁移只加不删，上一版也能读新数据；动作改名时保留 `aliases`。
@@ -406,15 +406,15 @@ plugin-center 是唯一的安装者；新增离线种子。应用中心不连接
 
 | 应用 | 包名 | 动作 | 依赖服务 |
 | --- | --- | --- | --- |
-| 业务邮件 mail | 现有 `bkms-workbench` | search（常驻，只查邮件）、get、list、draft\_reply、handoff | 提供 `workbenchMail` v1 → v2 |
+| 邮件助手 mail | 现有 `bkms-workbench` | search（常驻，只查邮件）、get、list、draft\_reply、handoff | 提供 `workbenchMail` v1 → v2 |
 | 合同 contract | `@bkms/app-contract` | start（mode = review / draft）、list、get、status、templates | 可选 `workbenchMail`；提供 `contractReview` |
 | 标书 bid | 现有 `xbuddy-bid-writer` | start、list、get、status、check | 可选 `workbenchMail`；已提供 `bid`（Cordis 服务） |
 
-各应用的实际改动（原方案低估了业务邮件的改动量）：
+各应用的实际改动（原方案低估了邮件助手的改动量）：
 
 | 应用 | 现状 | 改动 |
 | --- | --- | --- |
-| 业务邮件 | `workbenchMail` v1 只读：accounts / search（直接搜邮件服务器）/ read；内置自动发送低风险回复 | 升 v2：`items(filter)` 列出待决策事项；`draftFor(mail, instructions)` 对任意来信建任务并生成草稿，标记来自对话，`autoSendDecision` 一律排除；`attachment(ref)` 按引用交出附件；登记 `appCenter`；数据目录改用 `profileContext` |
+| 邮件助手 | `workbenchMail` v1 只读：accounts / search（直接搜邮件服务器）/ read；内置自动发送低风险回复 | 升 v2：`items(filter)` 列出待决策事项；`draftFor(mail, instructions)` 对任意来信建任务并生成草稿，标记来自对话，`autoSendDecision` 一律排除；`attachment(ref)` 按引用交出附件；登记 `appCenter`；数据目录改用 `profileContext` |
 | 标书 | 服务 `ctx.bid` 已有快照类方法；`createProject(req)` 只接受 HTTP 请求；peer 精确钉在 `0.2.0-rc.2`；依赖 pdfjs-dist 和 `@napi-rs/canvas` 未打包 | 加 `createProjectFromFile(ref)` 并开始解析；list / get / check 包装现有快照；登记 `appCenter`；peer 改为范围；依赖打包并按平台分包 |
 | 合同 | 无 | 按规范新建 |
 
@@ -471,7 +471,7 @@ plugin-center 是唯一的安装者；新增离线种子。应用中心不连接
 | 阶段零 原型验证（约 1 周） | app-center 原型 | 在真实桌面版上验证 V1–V4：企业模式能否看到插件注册的技能、`app_call` 卡片显示和跳转、插件页面新开对话并预填、plugin-center 安装后应用热加载并在对话中可用 | 验证记录；第 0、1 层实现方式定稿（技能机制，或退回 `systemPrompt.section` + `app_guide`） |
 | 阶段一 对话集成 | app-center、bkms-workbench、xbuddy-bid-writer、桌面 Profile | 新建 app-center：登记服务、应用技能、`app_call` / `task_status`、风险拦截、结果卡片、任务索引、审计；工作台升 `workbenchMail` v2 并登记、对话草稿排除自动发送、数据目录改用 `profileContext`；去掉预装 dsh-email；标书改 peer / `engines.dsh` 范围、依赖打包 | 已安装应用可在对话中使用；建立 AI 调用测试集 |
 | 阶段二 统一分发与权限 | plugin-center、XBuddy 桌面端、dsh-plugin-center、@bkms/base | plugin-center 只读服务（已实现）、离线种子、请求带 BKMS 令牌；XBuddy 预装清单只留 plugin-center、预装不再卸载移出清单的包、打包种子；所有插件改用 `bundleDependencies`；中心服务校验令牌、按角色过滤、`rollout` 分批和 `paused` 暂停、按平台分包；企业用户 Profile 去掉 dshmarket、插件页“添加插件”只给管理员 | 应用随客户端自动装好、平时自动升级；按角色下发 |
-| 阶段三 扩展 | 合同应用、knowledge-execute | 合同应用按接入规范新建并接入；评估把应用登记为接口知识、由检索选择第 0 层 | 首批三个应用全部接入；第 0 层扩展方案 |
+| 阶段三 扩展 | 合同助手、knowledge-execute | 合同助手按接入规范新建并接入；评估把应用登记为接口知识、由检索选择第 0 层 | 首批三个应用全部接入；第 0 层扩展方案 |
 
 | 闸口 | 位置 | 通过条件 |
 | --- | --- | --- |
@@ -479,7 +479,7 @@ plugin-center 是唯一的安装者；新增离线种子。应用中心不连接
 | 闸口 2 | 阶段一 → 阶段二 | AI 调用测试集准确率不低于 90%；对话中没有发送动作（预装已无 dsh-email）；对话草稿不进自动发送；标书在下一个 DSH 版本下仍能加载 |
 | 闸口 3 | 阶段二 → 阶段三 | 没权限的应用在应用中心和 AI 目录都不出现；断网首次启动从种子装好；升级后重启不降级；暂停分发和修复版流程演练通过 |
 
-阶段一可以和合同、标书应用的开发同时进行。
+阶段一可以和合同助手、标书助手的开发同时进行。
 
 ## 与现有代码的冲突
 
@@ -496,7 +496,7 @@ plugin-center 是唯一的安装者；新增离线种子。应用中心不连接
 | C9 | 预装 `dshmarket`，并存 plugin-center、`@bkms/ui-skills` | 桌面 Profile | 企业用户去掉 dshmarket；plugin-center 只给管理员 |
 | C10 | 工作台自动发送低风险回复 | `bkms-workbench/src/engine.ts:42` | 对话草稿一律排除自动发送 |
 | C11 | 数据位置不一致：工作台 `DSH_HOME/data`（默认 `~/.dsh`），标书 `profileContext.home` | `bkms-workbench/src/index.ts`；标书 `provider/plugin.ts` | 统一用 `profileContext`，工作台提供迁移 |
-| C12 | 原方案假设“业务邮件只需加一段登记”；`workbenchMail` 没有事项列表、对话草稿和附件交出 | `bkms-workbench/src/mail/service.ts` | 升 v2，见“首批应用” |
+| C12 | 原方案假设“邮件助手只需加一段登记”；`workbenchMail` 没有事项列表、对话草稿和附件交出 | `bkms-workbench/src/mail/service.ts` | 升 v2，见“首批应用” |
 | C13 | 原方案“提供方检查调用方权限”；Cordis `ctx.inject` 不提供调用方身份 | Cordis 服务机制 | 按能力拆服务 + 上架审核；显式调用方 ID 只防误用 |
 | C14 | 原方案用 `ctx.get('approval').request` 弹窗、`systemPrompt.section` 做目录；DSH 已有等价机制 | `xbuddy/packages/core/tools/src/index.ts`（`PreToolDecision`）；`packages/skill/tool-skill` | 改用 `ask` 决策和技能机制 |
 | C15 | XBuddy 预装逻辑每次启动按清单同步、只认 `.preinstalled-plugins/` 路径：plugin-center 升级过的插件会被装回旧版，移出清单的包会被卸载 | `xbuddy/apps/desktop/src/preinstalled-plugins.ts`（`d780c9d9b2`） | 预装清单只留 plugin-center；去掉卸载步骤；其余插件由 plugin-center 从种子安装 |
